@@ -230,9 +230,10 @@ function update(dt){
  updateSprint(dt);
  for(const c of cells){c.x=clampW(c.x+(c.vx+c.kx)*dt,rad(c));c.y=clampW(c.y+(c.vy+c.ky)*dt,rad(c));const k=Math.exp(-6*dt);c.kx*=k;c.ky*=k}
  // pellets
- for(const c of cells){const r=rad(c),reach=c.player?r*reachM():r,rs=reach*reach;
+ for(const c of cells){if(!c.alive)continue;const r=rad(c),reach=c.player?r*reachM():r;
   for(let i=0;i<pellets.length;i++){const p=pellets[i];if(p.by===c)continue;
-   if((p.x-c.x)**2+(p.y-c.y)**2<rs){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
+   const er=reach+(p.trail?SPR_R:7); // pellet counts as eaten as soon as its drawn edge touches the cell, not only once its centre is inside
+   if((p.x-c.x)**2+(p.y-c.y)**2<er*er){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
  // collisions
  for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){const a=cells[i],b=cells[j];if(!a.alive||!b.alive||a.imm>0||b.imm>0)continue;
   let e,v;if(canEat(a,b)){e=a;v=b}else if(canEat(b,a)){e=b;v=a}else{overlap(a,b);continue}
