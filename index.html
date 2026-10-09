@@ -89,7 +89,7 @@ function startGame(type){
 function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead'])document.getElementById(id).classList.remove('on');
  const m={menu:'menu',shop:'shopS',cust:'custS',pick:'pickS',pause:'pauseS',dead:'dead'}[s];if(m)document.getElementById(m).classList.add('on');
  document.getElementById('pauseBtn').style.display=s==='play'?'block':'none';if(s==='menu')refreshStats()}
-function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} Biocoins · Best size ${best} · build 4`}
+function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} Biocoins · Best size ${best} · build 5`}
 // ---------- input ----------
 const keys={};let mx=0,my=0,mouseOn=false,joy=null,boostH=false,abReq=false,touchUI=false;
 addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;keys[e.code]=true;
@@ -187,7 +187,8 @@ function activate(c,ang){if(c.cd>0)return false;c.cd=AB_CD;const r=rad(c);let ri
  fx.push({x:c.x,y:c.y,r:ringR,col:T[c.t].c,t:0});return true}
 const gain=(c,p)=>(p.trail?p.value:PEL_GAIN)*(c.player?gainM():1);
 // ---------- sprint ----------
-const sprintFloor=c=>A0*(c.player?1.2:1.6)+SPR_COST*3;
+// Player can sprint down to the minimum size (each blob costs SPR_COST, so size 1 -> 0 is allowed); bots keep a safety margin.
+const sprintFloor=c=>c.player?A0+SPR_COST-.01:A0*1.6+SPR_COST*3;
 function updateSprint(dt){for(const c of cells){
  if(c.boost&&c.area>sprintFloor(c)){c.spT-=dt;if(c.spT<=0){c.spT=SPR_INT;c.area-=SPR_COST;
   if(trails>=MAX_TRAIL){const i=pellets.findIndex(p=>p.trail);if(i>=0){pellets.splice(i,1);trails--}}
