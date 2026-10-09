@@ -20,13 +20,12 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
 #shopS{justify-content:flex-start;overflow:auto;padding:14px 0;gap:8px}#shopS h2,#shopS .dim{margin:0}
 #urows{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:8px;width:min(680px,94vw)}
 .urow{display:flex;align-items:center;gap:10px;background:#1b2440;border-radius:12px;padding:8px 12px;text-align:left}.urow div{flex:1}.urow small{display:block;opacity:.7;font-size:12px}.urow button{padding:6px 12px;font-size:15px;min-width:74px}
-#muteBtn{position:fixed;top:8px;left:calc(50% + 52px);padding:4px 10px;font-size:14px;background:#0008;display:none}
 #rows{gap:4px}.crow button{padding:2px 12px;font-size:16px}
 @media(max-height:520px){#custS.on{align-items:flex-start;overflow:auto;padding:8px}}
 #pauseBtn{position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 14px;font-size:14px;background:#0008;display:none}
 </style></head><body>
 <canvas id="c"></canvas>
-<button id="pauseBtn">❚❚</button><button id="muteBtn">🔊</button>
+<button id="pauseBtn">❚❚</button>
 <div class="scr on" id="menu"><h1>Petri.IO</h1>
  <div class="dim">Type beats type. Size only matters against your own kind.</div>
  <input id="name" maxlength="14" placeholder="Your name">
@@ -89,7 +88,7 @@ function startGame(type){
  setState('play')}
 function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead'])document.getElementById(id).classList.remove('on');
  const m={menu:'menu',shop:'shopS',cust:'custS',pick:'pickS',pause:'pauseS',dead:'dead'}[s];if(m)document.getElementById(m).classList.add('on');
- for(const id of['pauseBtn','muteBtn'])document.getElementById(id).style.display=s==='play'?'block':'none';if(s==='menu')refreshStats()}
+ document.getElementById('pauseBtn').style.display=s==='play'?'block':'none';if(s==='menu')refreshStats()}
 function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} coins · Best size ${best}`}
 // ---------- input ----------
 const keys={};let mx=0,my=0,mouseOn=false,joy=null,boostH=false,abReq=false,touchUI=false;
@@ -129,13 +128,8 @@ $('again').onclick=()=>setState('pick');$('toMenu').onclick=()=>setState('menu')
 $('pauseBtn').onclick=pause;
 for(let i=0;i<5;i++){const b=document.createElement('button');b.className='pick';b.style.background=T[i].c;
  b.innerHTML=`${T[i].n}<small>${T[i].ab}: ${T[i].bl}</small><small>Eats ${T[(i+1)%5].n}<br>Eaten by ${T[(i+4)%5].n}</small>`;b.onclick=()=>startGame(i);$('picks').appendChild(b)}
-// ---------- audio / juice ----------
-let AC=null,muted=store.get('mute',false),parts=[],feed=[];
-['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){}}));
-function sfx(f,d,ty,v,sl){if(muted||!AC)return;try{const o=AC.createOscillator(),gn=AC.createGain(),n=AC.currentTime;o.type=ty;o.frequency.setValueAtTime(f,n);o.frequency.exponentialRampToValueAtTime(Math.max(30,f*sl),n+d);gn.gain.setValueAtTime(v,n);gn.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(gn);gn.connect(AC.destination);o.start(n);o.stop(n+d)}catch(e){}}
-function toggleMute(){muted=!muted;store.set('mute',muted);$('muteBtn').textContent=muted?'🔇':'🔊'}
-$('muteBtn').onclick=toggleMute;$('muteBtn').textContent=muted?'🔇':'🔊';
-addEventListener('keydown',e=>{if(e.code==='KeyM'&&e.target.tagName!=='INPUT')toggleMute()});
+// ---------- juice ----------
+let parts=[],feed=[];
 function burst(x,y,col,n){for(let i=0;i<n;i++){const a=rnd(0,6.28),sp=rnd(40,170);parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,l:rnd(.3,.6),col})}}
 function pop(x,y,txt){parts.push({x,y,vx:0,vy:-45,l:1.1,txt,col:'#fff'})}
 // ---------- upgrades (numbers from Upgrade.kt / GameView.kt) ----------
@@ -180,7 +174,7 @@ function drawPreview(now){const pc=$('prev'),pg=pc.getContext('2d');pg.setTransf
 let banked=false;function bank(){if(banked)return;const c=runCoins-bankedRun;if(c>0){coins+=c;store.set('coins',coins);bankedRun=runCoins}if(peak>best){best=peak;store.set('best',best)}store.set('xp',xp)}
 let bankedRun=0;
 // ---------- abilities ----------
-function activate(c,ang){if(c.cd>0)return false;c.cd=AB_CD;if(c.player)sfx(300,.35,'triangle',.1,2.5);const r=rad(c);let ringR=0;
+function activate(c,ang){if(c.cd>0)return false;c.cd=AB_CD;const r=rad(c);let ringR=0;
  if(c.t===0){ringR=400+2*r;const rr=ringR*ringR;for(let i=pellets.length-1;i>=0;i--){const p=pellets[i];if((p.x-c.x)**2+(p.y-c.y)**2<rr&&p.by!==c){c.area+=gain(c,p);if(p.trail){pellets.splice(i,1);trails--}else newPellet(p)}}}
  else if(c.t===1){c.od=3;ringR=r*1.6}
  else if(c.t===2){ringR=r*2.6;for(const o of cells)if(o!==c&&o.alive&&Math.hypot(o.x-c.x,o.y-c.y)<ringR+rad(o))o.slow=3}
@@ -234,19 +228,19 @@ function update(dt){
  // pellets
  for(const c of cells){const r=rad(c),reach=c.player?r*reachM():r,rs=reach*reach;
   for(let i=0;i<pellets.length;i++){const p=pellets[i];if(p.by===c)continue;
-   if((p.x-c.x)**2+(p.y-c.y)**2<rs){c.area+=gain(c,p);if(c.player){sfx(520+rnd(0,220),.07,'sine',.05,1.5);burst(p.x,p.y,p.col,3)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
+   if((p.x-c.x)**2+(p.y-c.y)**2<rs){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
  // collisions
  for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){const a=cells[i],b=cells[j];if(!a.alive||!b.alive||a.imm>0||b.imm>0)continue;
   let e,v;if(canEat(a,b)){e=a;v=b}else if(canEat(b,a)){e=b;v=a}else{overlap(a,b);continue}
   const reach=rad(e)+rad(v)*EAT_OV;
   if((e.x-v.x)**2+(e.y-v.y)**2<reach*reach){e.area+=Math.min(v.area*ABSORB,e.area*1.5)*(e.player?gainM():1);v.alive=false;
-   if(v.player)killer=e;else if(e.player){sfx(240,.3,'square',.06,2.6);burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});xp+=10+Math.floor(v.area/100);kills+=4+Math.floor(score(v.area)/10)}}}
+   if(v.player)killer=e;else if(e.player){burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});xp+=10+Math.floor(v.area/100);kills+=4+Math.floor(score(v.area)/10)}}}
  for(const c of cells)if(!c.alive){if(c.player)die();else{c.t=ri(5);c.area=A0;c.alive=true;c.name=botName();c.look=randLook();c.imm=2.5;c.tgt=null;c.od=c.slow=0;c.cd=0;placeSafe(c)}}
  peak=Math.max(peak,score(player.area));runCoins=Math.floor(peak/5)+kills;
  for(const q of parts){q.x+=q.vx*dt;q.y+=q.vy*dt;q.l-=dt}parts=parts.filter(q=>q.l>0);for(const f of feed)f.t-=dt;feed=feed.filter(f=>f.t>0);
  for(const f of fx)f.t+=dt;fx=fx.filter(f=>f.t<.28);
  lbT-=dt;if(lbT<=0){lbT=.4;lb=cells.slice().sort((a,b)=>b.area-a.area).slice(0,5)}}
-function die(){sfx(300,.7,'sawtooth',.09,.15);bank();store.set('xp',xp);
+function die(){bank();store.set('xp',xp);
  $('dTitle').textContent=killer?`Eaten by ${killer.name} (${T[killer.t].n})`:'You died';
  $('dInfo').textContent=`Size ${peak} · +${runCoins} coins · Best ${best}`;setState('dead');bankedRun=0}
 // ---------- drawing ----------
