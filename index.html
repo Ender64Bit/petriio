@@ -89,7 +89,7 @@ function startGame(type){
 function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead'])document.getElementById(id).classList.remove('on');
  const m={menu:'menu',shop:'shopS',cust:'custS',pick:'pickS',pause:'pauseS',dead:'dead'}[s];if(m)document.getElementById(m).classList.add('on');
  document.getElementById('pauseBtn').style.display=s==='play'?'block':'none';if(s==='menu')refreshStats()}
-function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} Biocoins · Best size ${best}`}
+function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} Biocoins · Best size ${best} · build 4`}
 // ---------- input ----------
 const keys={};let mx=0,my=0,mouseOn=false,joy=null,boostH=false,abReq=false,touchUI=false;
 addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;keys[e.code]=true;
@@ -228,12 +228,13 @@ function update(dt){
  else{const s=maxSpeed(player)*speedM()*m*(player.boost?sprM():1);player.vx=dx*s;player.vy=dy*s;if(m>0){const d=wrap(Math.atan2(dy,dx)-player.hd);player.hd+=Math.sign(d)*Math.min(Math.abs(d),6.5*dt)}}
  for(const c of cells)if(!c.player)ai(c,dt);
  updateSprint(dt);
- for(const c of cells){c.x=clampW(c.x+(c.vx+c.kx)*dt,rad(c));c.y=clampW(c.y+(c.vy+c.ky)*dt,rad(c));const k=Math.exp(-6*dt);c.kx*=k;c.ky*=k}
+ for(const c of cells){c.ox=c.x;c.oy=c.y;c.x=clampW(c.x+(c.vx+c.kx)*dt,rad(c));c.y=clampW(c.y+(c.vy+c.ky)*dt,rad(c));const k=Math.exp(-6*dt);c.kx*=k;c.ky*=k}
  // pellets
- for(const c of cells){if(!c.alive)continue;const r=rad(c),reach=c.player?r*reachM():r;
+ for(const c of cells){if(!c.alive)continue;const r=rad(c),reach=(c.player?r*reachM():r)*1.15, // drawn bodies (virus spikes, bacteria's long axis...) stick out past rad(), so eat range does too
+   mx=c.x-c.ox,my=c.y-c.oy,ml=mx*mx+my*my; // this frame's movement segment, so fast cells / lag spikes can't skip over a pellet
   for(let i=0;i<pellets.length;i++){const p=pellets[i];if(p.by===c)continue;
-   const er=reach+(p.trail?SPR_R:7); // pellet counts as eaten as soon as its drawn edge touches the cell, not only once its centre is inside
-   if((p.x-c.x)**2+(p.y-c.y)**2<er*er){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
+   const er=reach+(p.trail?SPR_R:7),u=ml>0?Math.max(0,Math.min(1,((p.x-c.ox)*mx+(p.y-c.oy)*my)/ml)):1,qx=c.ox+mx*u-p.x,qy=c.oy+my*u-p.y;
+   if(qx*qx+qy*qy<er*er){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
  // collisions
  for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){const a=cells[i],b=cells[j];if(!a.alive||!b.alive||a.imm>0||b.imm>0)continue;
   let e,v;if(canEat(a,b)){e=a;v=b}else if(canEat(b,a)){e=b;v=a}else{overlap(a,b);continue}
