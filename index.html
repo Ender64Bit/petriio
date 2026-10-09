@@ -32,7 +32,7 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
  <div class="row"><button id="play">PLAY</button><button id="custBtn" style="background:#8b5cf6">CUSTOMIZE</button><button id="shopBtn" style="background:#d97706">SHOP</button></div>
  <div class="dim" id="stats"></div>
  <div class="dim">Mouse/touch-stick or WASD to steer · Space = boost · E/Shift = ability · Esc = pause</div></div>
-<div class="scr" id="shopS"><h2>Upgrade Shop</h2><div id="shopInfo" style="font-weight:700;color:#ffd040"></div><div class="dim" id="shopMsg">&nbsp;</div><div id="urows"></div><button id="shopBack">BACK</button></div>
+<div class="scr" id="shopS"><h2>Upgrade Shop</h2><div id="shopInfo" style="font-weight:700;color:#5ae682"></div><div class="dim" id="shopMsg">&nbsp;</div><div id="urows"></div><button id="shopBack">BACK</button></div>
 <div class="scr" id="custS"><canvas id="prev" width="190" height="190" style="position:static;width:190px;height:190px;background:#10172e;border-radius:16px"></canvas><div class="col"><h2>Customize</h2><div id="rows" class="col"></div><div class="row"><button id="rnd">RANDOMIZE</button><button id="ptype" style="background:#555"></button><button id="custBack">DONE</button></div></div></div>
 <div class="scr" id="pickS"><h2>Pick your cell</h2><div class="row" id="picks"></div></div>
 <div class="scr" id="pauseS"><h2>Paused</h2><button id="resume">RESUME</button><button id="quit" style="background:#555">QUIT</button></div>
@@ -89,7 +89,7 @@ function startGame(type){
 function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead'])document.getElementById(id).classList.remove('on');
  const m={menu:'menu',shop:'shopS',cust:'custS',pick:'pickS',pause:'pauseS',dead:'dead'}[s];if(m)document.getElementById(m).classList.add('on');
  document.getElementById('pauseBtn').style.display=s==='play'?'block':'none';if(s==='menu')refreshStats()}
-function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} coins · Best size ${best}`}
+function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} Biocoins · Best size ${best}`}
 // ---------- input ----------
 const keys={};let mx=0,my=0,mouseOn=false,joy=null,boostH=false,abReq=false,touchUI=false;
 addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;keys[e.code]=true;
@@ -133,22 +133,26 @@ let parts=[],feed=[];
 function burst(x,y,col,n){for(let i=0;i<n;i++){const a=rnd(0,6.28),sp=rnd(40,170);parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,l:rnd(.3,.6),col})}}
 function pop(x,y,txt){parts.push({x,y,vx:0,vy:-45,l:1.1,txt,col:'#fff'})}
 // ---------- upgrades (numbers from Upgrade.kt / GameView.kt) ----------
-const UNLOCK_LEVEL=10; // shop is locked until this account level (set to 1 to test)
-const UP=[['Speed','+10% move speed per level',18],['Point Gain','+20% size from food and kills',25],['Sprint Power','+14% boost speed per level',20],['Spawn Shield','+1.0s spawn immunity per level',15],['Food Reach','+14% food pickup range per level',20]];
+// Each upgrade unlocks at its own account level, worst -> best, 10 levels apart (set the numbers to 1 to test).
+// Saves are stored by the index in UP below, so don't reorder UP itself; the shop order comes from the unlock level.
+const BIO='#5ae682'; // Biocoin green
+const UP=[['Speed','+10% move speed per level',18,40],['Point Gain','+20% size from food and kills',25,50],['Sprint Power','+14% boost speed per level',20,30],['Spawn Shield','+1.0s spawn immunity per level',15,10],['Food Reach','+14% food pickup range per level',20,20]];
+const UP_ORDER=UP.map((_,i)=>i).sort((a,b)=>UP[a][3]-UP[b][3]); // shop display order: Shield, Reach, Sprint, Speed, Point Gain
+const SHOP_UNLOCK=Math.min(...UP.map(u=>u[3]));
 const UP_MAX=5;let upLv=store.get('up',[0,0,0,0,0]);if(!Array.isArray(upLv)||upLv.length!==5)upLv=[0,0,0,0,0];upLv=upLv.map(v=>Math.max(0,Math.min(UP_MAX,v|0)));
 const speedM=()=>1+.10*upLv[0],gainM=()=>1+.20*upLv[1],sprM=()=>SPR_MULT+.14*upLv[2],shieldT=()=>2.5+1.0*upLv[3],reachM=()=>1+.14*upLv[4];
 const upCost=(i,l)=>Math.ceil(UP[i][2]*Math.pow(1.75,l));
 function renderShop(msg){const L=level();
- $('shopInfo').textContent=`⬤ ${coins} coins · Level ${L.l}`+(L.l<UNLOCK_LEVEL?` · 🔒 unlocks at Level ${UNLOCK_LEVEL}`:'');
+ $('shopInfo').textContent=`⬤ ${coins} Biocoins · Level ${L.l}`+(L.l<SHOP_UNLOCK?` · 🔒 upgrades start at Level ${SHOP_UNLOCK}`:'');
  if(msg!=null)$('shopMsg').textContent=msg;
  const box=$('urows');box.innerHTML='';
- UP.forEach(([n,bl],i)=>{const l=upLv[i],d=document.createElement('div');d.className='urow';
+ UP_ORDER.forEach(i=>{const [n,bl,,ul]=UP[i],l=upLv[i],open=L.l>=ul,d=document.createElement('div');d.className='urow';if(!open)d.style.opacity='.55';
   d.innerHTML=`<div><b>${n}</b> <span style="color:#ffd040">${'●'.repeat(l)}${'○'.repeat(UP_MAX-l)}</span><small>${bl}</small></div>`;
-  const b=document.createElement('button');b.textContent=l>=UP_MAX?'MAX':`⬤ ${upCost(i,l)}`;b.style.background=l>=UP_MAX?'#555':'#16a34a';b.onclick=()=>buy(i);d.appendChild(b);box.appendChild(d)})}
+  const b=document.createElement('button');b.textContent=!open?`🔒 LV ${ul}`:l>=UP_MAX?'MAX':`⬤ ${upCost(i,l)}`;b.style.background=!open||l>=UP_MAX?'#555':'#16a34a';b.onclick=()=>buy(i);d.appendChild(b);box.appendChild(d)})}
 function buy(i){const L=level();
- if(L.l<UNLOCK_LEVEL)return renderShop(`Unlocks at Level ${UNLOCK_LEVEL}`);
+ if(L.l<UP[i][3])return renderShop(`${UP[i][0]} unlocks at Level ${UP[i][3]}`);
  const l=upLv[i];if(l>=UP_MAX)return renderShop(`${UP[i][0]} is already maxed`);
- const c=upCost(i,l);if(coins<c)return renderShop(`Need ${c-coins} more coins`);
+ const c=upCost(i,l);if(coins<c)return renderShop(`Need ${c-coins} more Biocoins`);
  coins-=c;upLv[i]=l+1;store.set('coins',coins);store.set('up',upLv);renderShop(`${UP[i][0]} upgraded!`)}
 $('shopBtn').onclick=()=>{renderShop('\u00a0');setState('shop')};
 $('shopBack').onclick=()=>setState('menu');
@@ -242,7 +246,7 @@ function update(dt){
  lbT-=dt;if(lbT<=0){lbT=.4;lb=cells.slice().sort((a,b)=>b.area-a.area).slice(0,5)}}
 function die(){bank();store.set('xp',xp);
  $('dTitle').textContent=killer?`Eaten by ${killer.name} (${T[killer.t].n})`:'You died';
- $('dInfo').textContent=`Size ${peak} · +${runCoins} coins · Best ${best}`;setState('dead');bankedRun=0}
+ $('dInfo').textContent=`Size ${peak} · +${runCoins} Biocoins · Best ${best}`;setState('dead');bankedRun=0}
 // ---------- drawing ----------
 function shapeR(t,th,cs,rot,s){switch(t){
  case 0:{const k=Math.abs(Math.cos(6*(th-rot)));return .82+.3*Math.pow(k,8)}
@@ -378,7 +382,7 @@ function draw(){
 function hud(){
  if(touchUI&&VH>VW){g.textAlign='center';g.fillStyle='#fff';g.font='700 15px system-ui';g.fillText('Rotate your phone to landscape for a better view',VW/2,VH-130)}
  g.textAlign='left';g.fillStyle='#fff';g.font='700 22px system-ui';g.fillText(`Size ${score(player.area)}`,16,32);
- g.font='16px system-ui';g.fillStyle='#ffd040';g.fillText(`⬤ ${coins+runCoins-bankedRun} coins`,16,56);
+ g.font='16px system-ui';g.fillStyle=BIO;g.fillText(`⬤ ${coins+runCoins-bankedRun} Biocoins`,16,56);
  const lv=level();g.fillStyle='#cfe';g.fillText(`Lv ${lv.l}  ${lv.into}/${lv.need} XP`,16,78);
  // leaderboard
  g.fillStyle='#0008';g.fillRect(VW-210,10,200,28+lb.length*22);g.fillStyle='#fff';g.font='700 15px system-ui';g.textAlign='left';g.fillText('Leaderboard',VW-200,30);
