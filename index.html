@@ -28,6 +28,20 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
 .cosCard b{font-size:15px}.cosCard small{opacity:.7;font-size:12px}
 .cosCard button{padding:6px 10px;font-size:14px;min-width:96px}
 .wallet{font-weight:700;color:#5ae682}
+#questS{justify-content:flex-start;overflow:auto;padding:12px 0;gap:8px}#questS h2,#questS p{margin:0}
+#questGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;width:min(860px,94vw)}
+.qCard{display:flex;flex-direction:column;gap:6px;background:#1e1e29;border:2px solid #ffffff26;border-radius:12px;padding:12px;text-align:left}
+.qCard.claimable{border-color:#6ee1b9}
+.qCard.claimed{border-color:#78c8a099;opacity:.72}
+.qTop{display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#6ee1b9;letter-spacing:.5px}
+.qTitle{font-weight:700;font-size:17px}
+.qProg{font-weight:700;font-size:22px;text-align:center}
+.qBar{height:9px;background:#ffffff1f;border-radius:5px;overflow:hidden}
+.qBar i{display:block;height:100%;width:0;background:#5aaaff;border-radius:5px}
+.qCard.claimable .qBar i{background:#6ee1b9}
+.qCard button{padding:8px 10px;font-size:15px;margin-top:2px}
+#questsBtn{position:relative}
+#qBadge{display:none;position:absolute;top:-8px;right:-8px;min-width:20px;height:20px;border-radius:10px;background:#2fa56a;color:#fff;font-size:13px;font-weight:700;line-height:20px;padding:0 5px}
 @media(max-height:520px){#custS.on{align-items:flex-start;overflow:auto;padding:8px}}
 #pauseBtn{position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 14px;font-size:14px;background:#0008;display:none}
 #muteBtn{position:fixed;top:8px;right:8px;padding:6px 12px;font-size:16px;background:#0008;z-index:5}
@@ -38,11 +52,12 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
 <div class="scr on" id="menu"><h1>Petri.IO</h1>
  <div class="dim">Type beats type. Size only matters against your own kind.</div>
  <input id="name" maxlength="14" placeholder="Your name">
- <div class="row"><button id="play">PLAY</button><button id="custBtn" style="background:#8b5cf6">CUSTOMIZE</button><button id="shopBtn" style="background:#d97706">UPGRADES</button><button id="cosmBtn" style="background:#c2703a">ACCESSORIES</button></div>
+ <div class="row"><button id="play">PLAY</button><button id="custBtn" style="background:#8b5cf6">CUSTOMIZE</button><button id="shopBtn" style="background:#d97706">UPGRADES</button><button id="cosmBtn" style="background:#c2703a">ACCESSORIES</button><button id="questsBtn" style="background:#2f7d5c">QUESTS<span id="qBadge"></span></button></div>
  <div class="dim" id="stats"></div>
  <div class="dim">Mouse/touch-stick or WASD to steer · Space = boost · E/Shift = ability · Esc = pause</div></div>
 <div class="scr" id="shopS"><h2>Upgrade Shop</h2><div id="shopInfo" style="font-weight:700;color:#5ae682"></div><div class="dim" id="shopMsg">&nbsp;</div><div id="urows"></div><button id="shopBack">BACK</button></div>
 <div class="scr" id="cosS"><h2>Accessories</h2><div class="dim" id="cosInfo"></div><div class="dim" id="cosMsg">&nbsp;</div><div id="cosGrid"></div><button id="cosBack">BACK</button></div>
+<div class="scr" id="questS"><h2>Daily Quests</h2><div class="dim" id="questInfo"></div><div class="dim" id="questMsg">&nbsp;</div><div id="questGrid"></div><button id="questBack">BACK</button></div>
 <div class="scr" id="custS"><canvas id="prev" width="190" height="190" style="position:static;width:190px;height:190px;background:#10172e;border-radius:16px"></canvas><div class="col"><h2>Customize</h2><div id="rows" class="col"></div><div class="row"><button id="rnd">RANDOMIZE</button><button id="ptype" style="background:#555"></button><button id="custBack">DONE</button></div></div></div>
 <div class="scr" id="pickS"><h2>Pick your cell</h2><div class="row" id="picks"></div></div>
 <div class="scr" id="pauseS"><h2>Paused</h2><button id="resume">RESUME</button><button id="quit" style="background:#555">QUIT</button></div>
@@ -181,8 +196,8 @@ function startGame(type){
  for(let i=0;i<BOTS;i++)cells.push(mkBot());
  for(let i=0;i<PELLETS;i++)pellets.push(newPellet());
  setState('play')}
-function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead','cosS'])document.getElementById(id).classList.remove('on');
- const m={menu:'menu',shop:'shopS',cust:'custS',pick:'pickS',pause:'pauseS',dead:'dead',cos:'cosS'}[s];if(m)document.getElementById(m).classList.add('on');
+function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead','cosS','questS'])document.getElementById(id).classList.remove('on');
+ const m={menu:'menu',shop:'shopS',cust:'custS',pick:'pickS',pause:'pauseS',dead:'dead',cos:'cosS',quests:'questS'}[s];if(m)document.getElementById(m).classList.add('on');
  document.getElementById('pauseBtn').style.display=s==='play'?'block':'none';if(s==='menu')refreshStats();syncMute()}
 function refreshStats(){const L=level();document.getElementById('stats').textContent=`Level ${L.l} (${L.into}/${L.need} XP) · ${coins} Biocoins · Best size ${best} · build 6`}
 // ---- unique names / looks
@@ -300,6 +315,104 @@ function renderCosmetics(){
 $('cosmBtn').onclick=()=>{refreshStock(true);cosmMsg='';renderCosmetics();setState('cos')};
 $('cosBack').onclick=()=>setState('menu');
 
+// ============================================================ daily quests (Quest.kt / GameView.kt)
+// The board is deterministic per day (QuestBoard.forDay), so only progress/claimed are saved.
+// Counts add up; SCORE is a running maximum. Timed goals use mm:ss readouts.
+const QUEST_DAILY=3;
+const questTimed=g=>g==='PLAY_TYPE'||g==='BOOST'||g==='SURVIVE';
+const mmss=s=>{const v=Math.max(0,Math.floor(s));return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`};
+// Each generator rolls its own numbers from the shared day-seeded RNG, worst -> best.
+const QUEST_GENS=[
+ rng=>{const n=[3,5,8,10][Math.floor(rng()*4)];return{goal:'KILLS',type:null,title:`Eat ${n} rival cells`,target:n,rewardCoins:40+n*8,rewardXp:0}},
+ rng=>{const t=Math.floor(rng()*5),m=[3,5,10,15][Math.floor(rng()*4)];return{goal:'PLAY_TYPE',type:t,title:`Play as ${T[t].n} for ${m} minutes`,target:m*60,rewardCoins:0,rewardXp:30+6*m}},
+ rng=>{const n=[40,60,80,120][Math.floor(rng()*4)];return{goal:'SCORE',type:null,title:`Reach size ${n} in a single run`,target:n,rewardCoins:30+n/2,rewardXp:0}},
+ rng=>{const n=[100,150,200,300][Math.floor(rng()*4)];return{goal:'PELLETS',type:null,title:`Eat ${n} food pellets`,target:n,rewardCoins:25+n/5,rewardXp:0}},
+ rng=>{const n=[5,8,12,15][Math.floor(rng()*4)];return{goal:'ABILITIES',type:null,title:`Use your ability ${n} times`,target:n,rewardCoins:0,rewardXp:20+8*n}},
+ rng=>{const s=[30,45,60,90][Math.floor(rng()*4)];return{goal:'BOOST',type:null,title:`Boost for ${s} seconds`,target:s,rewardCoins:0,rewardXp:30+3*s}},
+ rng=>{const m=[5,10,15][Math.floor(rng()*3)];return{goal:'SURVIVE',type:null,title:`Survive ${m} minutes in total`,target:m*60,rewardCoins:30+6*m,rewardXp:0}},
+ rng=>{const n=[8,12,20][Math.floor(rng()*3)];return{goal:'BLOBS',type:null,title:`Eat ${n} dropped blobs`,target:n,rewardCoins:0,rewardXp:25+6*n}}
+];
+// Deterministic per day, same idea as the cosmetics stock (Java's Random can't be matched exactly).
+function questsForDay(day){
+ const rng=mulberry32((day*7919+13)>>>0);
+ const pool=QUEST_GENS.slice();
+ for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));const x=pool[i];pool[i]=pool[j];pool[j]=x}
+ return Array.from({length:QUEST_DAILY},(_,i)=>pool[i](rng));
+}
+let quests=[],questProgress=[0,0,0],questClaimed=[false,false,false],questDay=null,questMsg='',questsDirty=false,questSaveT=5;
+function saveQuests(){store.set('quest_day',questDay);store.set('quest_p',questProgress);store.set('quest_c',questClaimed);questsDirty=false;questSaveT=5}
+function refreshQuests(){
+ const day=dayIndex(Date.now());
+ if(day===questDay)return; // already built for today - keep live in-memory progress
+ questDay=day;quests=questsForDay(day);
+ if(store.get('quest_day',null)===day){
+  const p=store.get('quest_p',[]),c=store.get('quest_c',[]);
+  for(let i=0;i<quests.length;i++){questProgress[i]=Number(p[i])||0;questClaimed[i]=!!c[i]}
+ }else{ // new day (or first launch): wipe yesterday's progress
+  for(let i=0;i<quests.length;i++){questProgress[i]=0;questClaimed[i]=false}
+  saveQuests();
+ }
+ refreshQuestBadge();
+}
+function questsClaimable(){let n=0;for(let i=0;i<quests.length;i++)if(!questClaimed[i]&&questProgress[i]>=quests[i].target)n++;return n}
+function refreshQuestBadge(){const b=$('qBadge');if(!b)return;const n=questsClaimable();b.textContent=n;b.style.display=n>0?'block':'none'}
+function addQuestProgress(goal,amount,type){
+ for(let i=0;i<quests.length;i++){
+  const q=quests[i];
+  if(q.goal!==goal||questClaimed[i])continue;
+  if(q.type!=null&&q.type!==type)continue;
+  if(questProgress[i]>=q.target)continue;
+  questProgress[i]=goal==='SCORE'?Math.max(questProgress[i],amount):Math.min(questProgress[i]+amount,q.target);
+  questsDirty=true;
+  if(questProgress[i]>=q.target){ // just completed: tell the player, save right away
+   questMsg='Quest complete: '+q.title;
+   feed.push({t:3.5,txt:'Quest complete! Claim it in QUESTS'});
+   saveQuests();refreshQuestBadge();
+  }
+ }
+}
+function claimQuest(slot){
+ const q=quests[slot];if(!q)return;
+ if(questClaimed[slot]){questMsg='Already claimed';return renderQuests()}
+ if(questProgress[slot]<q.target){questMsg='Not finished yet';return renderQuests()}
+ questClaimed[slot]=true;
+ if(q.rewardCoins>0){coins+=q.rewardCoins;store.set('coins',coins)}
+ if(q.rewardXp>0){xp+=q.rewardXp;store.set('xp',xp)}
+ saveQuests();refreshStats();refreshQuestBadge();
+ questMsg=`Claimed ${q.title}: `+(q.rewardXp>0?`+${q.rewardXp} XP`:`+${q.rewardCoins} Biocoins`);
+ renderQuests();
+}
+function renderQuests(){
+ const rem=msUntilReset(Date.now()),hrs=Math.floor(rem/3600000),mins=Math.floor(rem/60000)%60;
+ let claimedCount=0;for(let i=0;i<quests.length;i++)if(questClaimed[i])claimedCount++;
+ $('questInfo').innerHTML=`⬤ <span class="wallet">${coins}</span> Biocoins · New quests in ${hrs}h ${String(mins).padStart(2,'0')}m · ${claimedCount} of ${quests.length} claimed`;
+ $('questMsg').textContent=questMsg||'Finish quests by playing — tap a finished one to claim its reward';
+ const grid=$('questGrid');grid.innerHTML='';
+ quests.forEach((q,i)=>{
+  const progress=questProgress[i],claimed=questClaimed[i],complete=progress>=q.target,claimable=complete&&!claimed;
+  const frac=clamp01(progress/Math.max(.0001,q.target));
+  const d=document.createElement('div');d.className='qCard'+(claimable?' claimable':claimed?' claimed':'');
+  const top=document.createElement('div');top.className='qTop';
+  const tag=document.createElement('span');tag.textContent=q.goal.replace('_',' ');
+  const rew=document.createElement('span');rew.textContent=q.rewardCoins>0?`⬤ ${q.rewardCoins}`:`+${q.rewardXp} XP`;
+  rew.style.color=q.rewardCoins>0?BIO:'#96e6ff';
+  top.append(tag,rew);
+  const title=document.createElement('div');title.className='qTitle';title.textContent=q.title;
+  const prog=document.createElement('div');prog.className='qProg';
+  prog.textContent=questTimed(q.goal)?`${mmss(Math.min(progress,q.target))} / ${mmss(q.target)}`:`${Math.floor(progress)} / ${Math.floor(q.target)}`;
+  prog.style.color=complete?'#6ee1b9':'#fff';
+  const bar=document.createElement('div');bar.className='qBar';const fill=document.createElement('i');fill.style.width=(frac*100)+'%';bar.appendChild(fill);
+  const b=document.createElement('button');
+  if(claimed){b.textContent='CLAIMED';b.style.background='#26463a';b.disabled=true}
+  else if(claimable){b.textContent='CLAIM REWARD';b.style.background='#2da069'}
+  else{b.textContent='IN PROGRESS';b.style.background='#2e313f'}
+  b.onclick=()=>claimQuest(i);
+  d.append(top,title,prog,bar,b);grid.appendChild(d);
+ });
+}
+$('questsBtn').onclick=()=>{refreshQuests();questMsg='';renderQuests();setState('quests')};
+$('questBack').onclick=()=>setState('menu');
+
 // ============================================================ customization
 let cz=Object.assign({eyes:1,mouth:1,hat:0,gear:0,pat:0,out:0,acc:0,tone:4},store.get('look',{}));
 for(const o of LOOK_OPTS)cz[o.key]=Math.max(0,Math.min(o.names.length-1,cz[o.key]|0));
@@ -325,7 +438,7 @@ function drawLookPreview(canvas,look,type,r){const pg=canvas.getContext('2d'),og
  pg.setTransform(1,0,0,1,0,0);pg.clearRect(0,0,canvas.width,canvas.height);pg.translate(canvas.width/2,canvas.height/2);
  g.fillStyle=T[type].c;g.globalAlpha=.18;g.beginPath();g.arc(0,0,r*1.35,0,6.3);g.fill();g.globalAlpha=1;
  drawCell({x:0,y:0,area:Math.PI*r*r,t:type,look,hd:0,imm:0,seed:1.5,name:'',player:false,pv:true,vx:0,vy:0,bump:0});g=og;t=ot}
-let banked=false,prevLevel=1;function bank(){if(banked)return;const c=runCoins-bankedRun;if(c>0){coins+=c;store.set('coins',coins);bankedRun=runCoins}if(peak>best){best=peak;store.set('best',best)}store.set('xp',xp)}
+ let banked=false,prevLevel=1;function bank(){if(banked)return;const c=runCoins-bankedRun;if(c>0){coins+=c;store.set('coins',coins);bankedRun=runCoins}if(peak>best){best=peak;store.set('best',best)}store.set('xp',xp);saveQuests()}
 let bankedRun=0;
 
 // ============================================================ abilities
@@ -335,7 +448,7 @@ function activate(c,ang){if(c.cd>0)return false;c.cd=AB_CD;const r=rad(c);let ri
  else if(c.t===2){ringR=r*2.6;for(const o of cells)if(o!==c&&o.alive&&Math.hypot(o.x-c.x,o.y-c.y)<ringR+rad(o))o.slow=3}
  else if(c.t===3){c.imm=Math.max(c.imm,2.5);ringR=r*1.5}
  else{c.kx+=Math.cos(ang)*900;c.ky+=Math.sin(ang)*900;ringR=r*1.4}
- fx.push({x:c.x,y:c.y,r:ringR,col:T[c.t].c,t:0});if(c.player)AudioSys.power();return true}
+ fx.push({x:c.x,y:c.y,r:ringR,col:T[c.t].c,t:0});if(c.player){AudioSys.power();addQuestProgress('ABILITIES',1)}return true}
 function siphonR(c){const base=400+rad(c)*2;return c.player?base*reachM():base}
 const gain=(c,p)=>(p.trail?p.value:PEL_GAIN)*(c.player?gainM():1);
 
@@ -343,7 +456,8 @@ const gain=(c,p)=>(p.trail?p.value:PEL_GAIN)*(c.player?gainM():1);
 const sprintFloor=c=>c.player?A0:A0*BOT_SPRINT_MARGIN;
 function sprintAllowed(c){if(!c.alive)return false;const need=c.player?1:BOT_SPRINT_RESERVE;return c.area-sprintFloor(c)>=SPR_COST*need}
 function updateSprint(dt){for(const c of cells){
- if(!c.boost||!sprintAllowed(c)||c.vx*c.vx+c.vy*c.vy<1){c.boost=false;c.spT=0;continue}
+  if(!c.boost||!sprintAllowed(c)||c.vx*c.vx+c.vy*c.vy<1){c.boost=false;c.spT=0;continue}
+  if(c.player)addQuestProgress('BOOST',dt);
  c.spT-=dt;if(c.spT<=0){c.spT=SPR_INT;c.area-=SPR_COST;
   if(trails>=MAX_TRAIL){const i=pellets.findIndex(p=>p.trail);if(i>=0){pellets.splice(i,1);trails--}}
   const a=c.hd+Math.PI,r=rad(c);pellets.push({x:clampW(c.x+Math.cos(a)*r,SPR_R),y:clampW(c.y+Math.sin(a)*r,SPR_R),trail:true,value:SPR_COST,life:TRAIL_LIFE,by:c,col:T[c.t].c})}}
@@ -467,14 +581,16 @@ function update(dt){
    mx=c.x-c.ox,my=c.y-c.oy,ml=mx*mx+my*my;
   for(let i=0;i<pellets.length;i++){const p=pellets[i];if(p.by===c)continue;
    const er=reach+(p.trail?SPR_R:7),u=ml>0?Math.max(0,Math.min(1,((p.x-c.ox)*mx+(p.y-c.oy)*my)/ml)):1,qx=c.ox+mx*u-p.x,qy=c.oy+my*u-p.y;
-   if(qx*qx+qy*qy<er*er){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3);AudioSys.pellet()}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
+   if(qx*qx+qy*qy<er*er){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3);AudioSys.pellet();addQuestProgress(p.trail?'BLOBS':'PELLETS',1)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
  for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){const a=cells[i],b=cells[j];if(!a.alive||!b.alive||a.imm>0||b.imm>0)continue;
   let e,v;if(canEat(a,b)){e=a;v=b}else if(canEat(b,a)){e=b;v=a}else{overlap(a,b);continue}
   const reach=rad(e)+rad(v)*EAT_OV;
   if((e.x-v.x)**2+(e.y-v.y)**2<reach*reach){e.area+=Math.min(v.area*ABSORB,e.area*1.5)*(e.player?gainM():1);v.alive=false;
-   if(v.player)killer=e;else if(e.player){burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});const before=level().l;xp+=XP_KILL_BASE+Math.floor(v.area/XP_KILL_AREA_DIV);if(level().l>before)levelUpUntil=performance.now()+2200;runKillCoins+=COIN_PER_KILL+Math.floor(score(v.area)/COIN_KILL_DIV);AudioSys.kill()}}}
+   if(v.player)killer=e;else if(e.player){burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});const before=level().l;xp+=XP_KILL_BASE+Math.floor(v.area/XP_KILL_AREA_DIV);if(level().l>before)levelUpUntil=performance.now()+2200;runKillCoins+=COIN_PER_KILL+Math.floor(score(v.area)/COIN_KILL_DIV);addQuestProgress('KILLS',1,v.t);AudioSys.kill()}}}
  for(const c of cells)if(!c.alive){if(c.player)die();else{const r=R0+Math.random()*30;c.t=ri(5);c.area=Math.PI*r*r;c.alive=true;c.name=uniqueBotName();c.look=uniqueBotLook();c.imm=SPAWN_IMM;c.hunt=null;c.tgt=null;c.od=c.slow=0;c.cd=0;c.boost=false;c.fl=0;c.huntLock=0;c.lock=0;c.bump=0;c.aiSeed=ri(1000000);botTraits(c);placeSafe(c)}}
  peak=Math.max(peak,score(player.area));runCoins=Math.floor(peak/COIN_SCORE_PER)+runKillCoins;
+ addQuestProgress('SURVIVE',dt);addQuestProgress('PLAY_TYPE',dt,player.t);addQuestProgress('SCORE',peak);
+ if(questsDirty){questSaveT-=dt;if(questSaveT<=0)saveQuests()}
  for(const q of parts){q.x+=q.vx*dt;q.y+=q.vy*dt;q.l-=dt}parts=parts.filter(q=>q.l>0);for(const f of feed)f.t-=dt;feed=feed.filter(f=>f.t>0);
  for(const f of fx)f.t+=dt;fx=fx.filter(f=>f.t<.28);
  lbT-=dt;if(lbT<=0){lbT=.4;const alive=cells.filter(c=>c.alive).sort((a,b)=>b.area-a.area);lb=alive.slice(0,5);lbRank=alive.indexOf(player)+1}}
@@ -619,7 +735,7 @@ function drawCell(c){const r=rad(c),L=c.look,sd=c.seed%6.283,body=tone(hex2rgb(T
  if(c.name){g.globalAlpha=1;g.font=`700 ${Math.max(12,Math.min(26,r*.45))}px system-ui`;g.textAlign='center';g.lineWidth=3;g.strokeStyle='#000a';g.fillStyle='#fff';g.strokeText(c.name,c.x,c.y+r+22);g.fillText(c.name,c.x,c.y+r+22)}}
 function draw(){
  g.fillStyle='#0b1020';g.fillRect(0,0,VW,VH);
- if(!player||state==='menu'||state==='pick'||state==='cust'||state==='shop'||state==='cos'){return}
+ if(!player||state==='menu'||state==='pick'||state==='cust'||state==='shop'||state==='cos'||state==='quests'){return}
  const r=rad(player),sc=Math.max(.3,Math.min(1.2,50/r))*Math.min(1,Math.max(.6,Math.min(VW,VH*1.6)/900));
  const L=player.x-VW/2/sc,Tp=player.y-VH/2/sc,R=player.x+VW/2/sc,B=player.y+VH/2/sc;
  g.save();g.scale(sc,sc);g.translate(-L,-Tp);
@@ -681,11 +797,12 @@ const AudioSys=(()=>{let ctx=null,enabled=store.get('snd',true),musicTimer=null,
 })();
 
 // ============================================================ main loop
-refreshStats();syncMute();
+refreshStats();syncMute();refreshQuests();
 let lastFrame=performance.now();
-function frame(now){
- let dt=(now-lastFrame)/1000;lastFrame=now;if(dt>.05)dt=.05;if(dt<0)dt=0;
- if(state==='play'&&player)update(dt);
+ function frame(now){
+  let dt=(now-lastFrame)/1000;lastFrame=now;if(dt>.05)dt=.05;if(dt<0)dt=0;
+  const qd=questDay;refreshQuests();if(questDay!==qd&&state==='quests')renderQuests(); // rotates the board on its own every 24h
+  if(state==='play'&&player)update(dt);
  draw();
  if(state==='cust')drawPreview(now);
  requestAnimationFrame(frame);
