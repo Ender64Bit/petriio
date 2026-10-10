@@ -67,7 +67,7 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
 "use strict";
 // ============================================================ constants
 // Numbers ported from GameView.kt / Cell.kt / CellType.kt / Upgrade.kt.
-const W=4500,BOTS=42,PELLETS=420,R0=24,A0=Math.PI*R0*R0,PEL_GAIN=60,SAME=1.15,EAT_OV=.25,ABSORB=.6;
+const W=4500,BOTS=42,PELLETS=420,R0=24,A0=Math.PI*R0*R0,PEL_GAIN=100,SAME=1.15,EAT_OV=.25,ABSORB=.6;
 const SPR_COST=100,SPR_INT=.25,SPR_R=10,MAX_TRAIL=250,TRAIL_LIFE=25,TRAIL_FADE=3,SPR_MULT=1.8,AB_CD=10;
 const BOT_SPRINT_MARGIN=1.6,BOT_SPRINT_RESERVE=3,BOT_SPEED_RESPONSE=12,VIS_TURN=6.5;
 const BUMP_DUR=.35,BUMP_MAX=.22,BUMP_KNOCK=980;
@@ -437,7 +437,8 @@ let bankedRun=0;
 
 // ============================================================ abilities
 function activate(c,ang){if(c.cd>0)return false;c.cd=AB_CD;const r=rad(c);let ringR=0;
- if(c.t===0){ringR=siphonR(c);const rr=ringR*ringR;for(let i=pellets.length-1;i>=0;i--){const p=pellets[i];if(p.by===c)continue;if((p.x-c.x)**2+(p.y-c.y)**2<rr){c.area+=gain(c,p);if(p.trail){pellets.splice(i,1);trails--}else newPellet(p)}}}
+ if(c.t===0){ringR=siphonR(c);const rr=ringR*ringR;let i=0;
+  while(i<pellets.length){const p=pellets[i];if(p.by===c||(p.x-c.x)**2+(p.y-c.y)**2>=rr){i++;continue}if(consumePellet(c,i))continue;i++}}
  else if(c.t===1){c.od=3;ringR=r*1.6}
  else if(c.t===2){ringR=r*2.6;for(const o of cells)if(o!==c&&o.alive&&Math.hypot(o.x-c.x,o.y-c.y)<ringR+rad(o))o.slow=3}
  else if(c.t===3){c.imm=Math.max(c.imm,2.5);ringR=r*1.5}
@@ -445,6 +446,38 @@ function activate(c,ang){if(c.cd>0)return false;c.cd=AB_CD;const r=rad(c);let ri
  fx.push({x:c.x,y:c.y,r:ringR,col:T[c.t].c,t:0});if(c.player){AudioSys.power();addQuestProgress('ABILITIES',1)}return true}
 function siphonR(c){const base=400+rad(c)*2;return c.player?base*reachM():base}
 const gain=(c,p)=>(p.trail?p.value:PEL_GAIN)*(c.player?gainM():1);
+// ---- pellet consumption (GameView.kt consumePellet / removePelletAt / handlePellets) ----
+// Remove pellet `i` for good (sprint blobs). Marked gone so bots already heading for it re-pick.
+function removePelletAt(i){const p=pellets[i];if(p.trail)trails--;p.gone=true;
+ const last=pellets.length-1;if(i!==last)pellets[i]=pellets[last];pellets.pop()}
+// `c` eats pellet `i`; returns true if it was removed (a sprint blob), so callers don't advance.
+function consumePellet(c,i){const p=pellets[i];
+ c.area+=gain(c,p);
+ if(c.player)addQuestProgress(p.trail?'BLOBS':'PELLETS',1); // all eat paths count (movement + Siphon)
+ if(p.trail){removePelletAt(i);return true}
+ newPellet(p);return false}
+// Frees a slot when the world is at MAX_TRAIL by removing the blob closest to fading out.
+function evictOldestTrail(){let oldest=-1,oldestLife=Infinity;
+ for(let i=0;i<pellets.length;i++){const p=pellets[i];if(p.trail&&p.life<oldestLife){oldestLife=p.life;oldest=i}}
+ if(oldest>=0)removePelletAt(oldest)}
+// Swept-segment pickup: catches fast cells that would tunnel past a pellet between frames.
+function handlePellets(){
+ for(const c of cells){if(!c.alive)continue;
+  const r=rad(c),reach=(c.player?r*reachM():r)*SAME,mx=c.x-c.ox,my=c.y-c.oy,ml=mx*mx+my*my;
+  let i=0;
+  while(i<pellets.length){
+   const p=pellets[i];
+   if(p.by===c){i++;continue} // can't reclaim your own dropped mass
+   const er=reach+(p.trail?SPR_R:7),u=ml>0?Math.max(0,Math.min(1,((p.x-c.ox)*mx+(p.y-c.oy)*my)/ml)):1;
+   const qx=c.ox+mx*u-p.x,qy=c.oy+my*u-p.y;
+   if(qx*qx+qy*qy<er*er){
+    if(c.player){burst(p.x,p.y,p.col,3);AudioSys.pellet()} // before respawn moves p
+    if(consumePellet(c,i))continue; // swapped-in pellet sits in slot i - test it too
+   }
+   i++;
+  }
+ }
+}
 
 // ============================================================ sprint
 const sprintFloor=c=>c.player?A0:A0*BOT_SPRINT_MARGIN;
@@ -453,9 +486,9 @@ function updateSprint(dt){for(const c of cells){
   if(!c.boost||!sprintAllowed(c)||c.vx*c.vx+c.vy*c.vy<1){c.boost=false;c.spT=0;continue}
   if(c.player)addQuestProgress('BOOST',dt);
  c.spT-=dt;if(c.spT<=0){c.spT=SPR_INT;c.area-=SPR_COST;
-  if(trails>=MAX_TRAIL){const i=pellets.findIndex(p=>p.trail);if(i>=0){pellets.splice(i,1);trails--}}
-  const a=c.hd+Math.PI,r=rad(c);pellets.push({x:clampW(c.x+Math.cos(a)*r,SPR_R),y:clampW(c.y+Math.sin(a)*r,SPR_R),trail:true,value:SPR_COST,life:TRAIL_LIFE,by:c,col:T[c.t].c})}}
- for(let i=pellets.length-1;i>=0;i--){const p=pellets[i];if(p.trail){p.life-=dt;if(p.life<=0){pellets.splice(i,1);trails--}}}}
+  if(trails>=MAX_TRAIL)evictOldestTrail();
+  const a=c.hd+Math.PI,r=rad(c);pellets.push({x:clampW(c.x+Math.cos(a)*r,SPR_R),y:clampW(c.y+Math.sin(a)*r,SPR_R),trail:true,value:SPR_COST,life:TRAIL_LIFE,by:c,col:T[c.t].c,gone:false});trails++}}
+ for(let i=pellets.length-1;i>=0;i--){const p=pellets[i];if(p.trail){p.life-=dt;if(p.life<=0)removePelletAt(i)}}}
 
 // ============================================================ bot AI (GameView.kt updateBot)
 // Heading is a persistent angle that always turns at a limited rate (never snaps), so cells visibly
@@ -571,11 +604,7 @@ function update(dt){
  for(const c of cells)if(!c.player)updateBot(c,dt);
  updateSprint(dt);
  for(const c of cells){c.ox=c.x;c.oy=c.y;c.x=clampW(c.x+(c.vx+c.kx)*dt,rad(c));c.y=clampW(c.y+(c.vy+c.ky)*dt,rad(c));const k=Math.exp(-6*dt);c.kx*=k;c.ky*=k}
- for(const c of cells){if(!c.alive)continue;const r=rad(c),reach=(c.player?r*reachM():r)*1.15,
-   mx=c.x-c.ox,my=c.y-c.oy,ml=mx*mx+my*my;
-  for(let i=0;i<pellets.length;i++){const p=pellets[i];if(p.by===c)continue;
-   const er=reach+(p.trail?SPR_R:7),u=ml>0?Math.max(0,Math.min(1,((p.x-c.ox)*mx+(p.y-c.oy)*my)/ml)):1,qx=c.ox+mx*u-p.x,qy=c.oy+my*u-p.y;
-   if(qx*qx+qy*qy<er*er){c.area+=gain(c,p);if(c.player){burst(p.x,p.y,p.col,3);AudioSys.pellet();addQuestProgress(p.trail?'BLOBS':'PELLETS',1)}if(p.trail){pellets.splice(i,1);trails--;i--;p.gone=true}else newPellet(p)}}}
+ handlePellets();
  for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){const a=cells[i],b=cells[j];if(!a.alive||!b.alive||a.imm>0||b.imm>0)continue;
   let e,v;if(canEat(a,b)){e=a;v=b}else if(canEat(b,a)){e=b;v=a}else{overlap(a,b);continue}
   const reach=rad(e)+rad(v)*EAT_OV;
