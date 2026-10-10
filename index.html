@@ -22,9 +22,10 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
 .urow{display:flex;align-items:center;gap:10px;background:#1b2440;border-radius:12px;padding:8px 12px;text-align:left}.urow div{flex:1}.urow small{display:block;opacity:.7;font-size:12px}.urow button{padding:6px 12px;font-size:15px;min-width:74px}
 #rows{gap:4px}.crow button{padding:2px 12px;font-size:16px}
 #cosS{justify-content:flex-start;overflow:auto;padding:12px 0;gap:8px}#cosS h2,#cosS p{margin:0}
+#cosS.on{flex-direction:row;flex-wrap:wrap;gap:24px 36px;justify-content:center;align-items:flex-start;padding:12px}
 #cosGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;width:min(720px,94vw)}
 .cosCard{display:flex;flex-direction:column;align-items:center;gap:4px;background:#1b2440;border-radius:12px;padding:8px;border:2px solid #2a355a}
-.cosCard.worn{border-color:#5ae682}.cosCard canvas{width:120px;height:120px;background:#10172e;border-radius:10px}
+.cosCard.worn{border-color:#5ae682}
 .cosCard b{font-size:15px}.cosCard small{opacity:.7;font-size:12px}
 .cosCard button{padding:6px 10px;font-size:14px;min-width:96px}
 .wallet{font-weight:700;color:#5ae682}
@@ -42,7 +43,7 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
 .qCard button{padding:8px 10px;font-size:15px;margin-top:2px}
 #questsBtn{position:relative}
 #qBadge{display:none;position:absolute;top:-8px;right:-8px;min-width:20px;height:20px;border-radius:10px;background:#2fa56a;color:#fff;font-size:13px;font-weight:700;line-height:20px;padding:0 5px}
-@media(max-height:520px){#custS.on{align-items:flex-start;overflow:auto;padding:8px}}
+@media(max-height:520px){#custS.on{align-items:flex-start;overflow:auto;padding:8px}#cosS.on{padding:8px}}
 #pauseBtn{position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 14px;font-size:14px;background:#0008;display:none}
 #muteBtn{position:fixed;top:8px;right:8px;padding:6px 12px;font-size:16px;background:#0008;z-index:5}
 </style></head><body>
@@ -56,7 +57,7 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
  <div class="dim" id="stats"></div>
  <div class="dim">Mouse/touch-stick or WASD to steer · Space = boost · E/Shift = ability · Esc = pause</div></div>
 <div class="scr" id="shopS"><h2>Upgrade Shop</h2><div id="shopInfo" style="font-weight:700;color:#5ae682"></div><div class="dim" id="shopMsg">&nbsp;</div><div id="urows"></div><button id="shopBack">BACK</button></div>
-<div class="scr" id="cosS"><h2>Accessories</h2><div class="dim" id="cosInfo"></div><div class="dim" id="cosMsg">&nbsp;</div><div id="cosGrid"></div><button id="cosBack">BACK</button></div>
+<div class="scr" id="cosS"><canvas id="cosPrev" width="190" height="190" style="position:static;width:190px;height:190px;background:#10172e;border-radius:16px"></canvas><div class="col"><h2>Accessories</h2><div class="dim" id="cosInfo"></div><div class="dim" id="cosMsg">&nbsp;</div><div id="cosGrid"></div><button id="cosBack">BACK</button></div></div>
 <div class="scr" id="questS"><h2>Daily Quests</h2><div class="dim" id="questInfo"></div><div class="dim" id="questMsg">&nbsp;</div><div id="questGrid"></div><button id="questBack">BACK</button></div>
 <div class="scr" id="custS"><canvas id="prev" width="190" height="190" style="position:static;width:190px;height:190px;background:#10172e;border-radius:16px"></canvas><div class="col"><h2>Customize</h2><div id="rows" class="col"></div><div class="row"><button id="rnd">RANDOMIZE</button><button id="ptype" style="background:#555"></button><button id="custBack">DONE</button></div></div></div>
 <div class="scr" id="pickS"><h2>Pick your cell</h2><div class="row" id="picks"></div></div>
@@ -298,21 +299,18 @@ function renderCosmetics(){
  const grid=$('cosGrid');grid.innerHTML='';
  for(let i=0;i<cosmeticStock.length;i++){
   const c=cosmeticStock[i],owned=isCosmeticOwned(c),eq=isCosmeticEquipped(c),aff=!owned&&coins>=c.price;
-  const look=toLook(Object.assign({},cz,{[c.opt]:c.index}));
-  const d=document.createElement('div');d.className='cosCard'+(eq?' worn':'');
-  const pcan=document.createElement('canvas');pcan.width=120;pcan.height=120;
-  drawLookPreview(pcan,look,i%5,44);
-  const name=document.createElement('b');name.textContent=c.label;
-  const sub=document.createElement('small');sub.textContent=`${LOOK_BY_KEY[c.opt].label} — ${c.blurb}`;
-  const b=document.createElement('button');
-  if(eq){b.textContent='EQUIPPED';b.style.background='#16a34a'}
-  else if(owned){b.textContent='WEAR';b.style.background='#3d4a70'}
-  else{b.textContent=`⬤ ${c.price}`;b.style.background=aff?'#16a34a':'#555'}
-  b.onclick=()=>buyOrWear(c);
-  d.append(pcan,name,sub,b);grid.appendChild(d);
+   const d=document.createElement('div');d.className='cosCard'+(eq?' worn':'');
+   const name=document.createElement('b');name.textContent=c.label;
+   const sub=document.createElement('small');sub.textContent=`${LOOK_BY_KEY[c.opt].label} — ${c.blurb}`;
+   const b=document.createElement('button');
+   if(eq){b.textContent='EQUIPPED';b.style.background='#16a34a'}
+   else if(owned){b.textContent='WEAR';b.style.background='#3d4a70'}
+   else{b.textContent=`⬤ ${c.price}`;b.style.background=aff?'#16a34a':'#555'}
+   b.onclick=()=>buyOrWear(c);
+   d.append(name,sub,b);grid.appendChild(d);
  }
 }
-$('cosmBtn').onclick=()=>{refreshStock(true);cosmMsg='';renderCosmetics();setState('cos')};
+$('cosmBtn').onclick=()=>{pvType=chosen;refreshStock(true);cosmMsg='';renderCosmetics();setState('cos')};
 $('cosBack').onclick=()=>setState('menu');
 
 // ============================================================ daily quests (Quest.kt / GameView.kt)
@@ -431,14 +429,10 @@ $('ptype').onclick=()=>{pvType=(pvType+1)%5;updCz()};
 $('rnd').onclick=()=>{const roll=(key,none)=>{if(Math.random()<none)return 0;const cand=[];for(let v=1;v<LOOK_BY_KEY[key].names.length;v++)if(isLookOwned(key,v))cand.push(v);return cand.length?cand[ri(cand.length)]:0};
  cz.eyes=roll('eyes',.04);cz.mouth=roll('mouth',.10);cz.gear=roll('gear',.45);cz.hat=roll('hat',.35);cz.pat=roll('pat',.45);cz.out=ri(8);cz.acc=ri(8);cz.tone=ri(9);
  store.set('look',cz);updCz()};
-function drawPreview(now){const pc=$('prev'),pg=pc.getContext('2d');pg.setTransform(1,0,0,1,0,0);pg.clearRect(0,0,pc.width,pc.height);
+function drawPreview(now,id){const pc=$(id||'prev'),pg=pc.getContext('2d');pg.setTransform(1,0,0,1,0,0);pg.clearRect(0,0,pc.width,pc.height);
  const og=g,ot=t;g=pg;t=now/1000;g.translate(pc.width/2,pc.height/2+8);
- drawCell({x:0,y:0,area:Math.PI*46*46,t:pvType,look:toLook(cz),hd:Math.sin(t*.8)*.6,imm:0,seed:1,name:'',player:true,pv:true,vx:0,vy:0,bump:0});g=og;t=ot}
-function drawLookPreview(canvas,look,type,r){const pg=canvas.getContext('2d'),og=g,ot=t;g=pg;t=performance.now()/1000;
- pg.setTransform(1,0,0,1,0,0);pg.clearRect(0,0,canvas.width,canvas.height);pg.translate(canvas.width/2,canvas.height/2);
- g.fillStyle=T[type].c;g.globalAlpha=.18;g.beginPath();g.arc(0,0,r*1.35,0,6.3);g.fill();g.globalAlpha=1;
- drawCell({x:0,y:0,area:Math.PI*r*r,t:type,look,hd:0,imm:0,seed:1.5,name:'',player:false,pv:true,vx:0,vy:0,bump:0});g=og;t=ot}
- let banked=false,prevLevel=1;function bank(){if(banked)return;const c=runCoins-bankedRun;if(c>0){coins+=c;store.set('coins',coins);bankedRun=runCoins}if(peak>best){best=peak;store.set('best',best)}store.set('xp',xp);saveQuests()}
+  drawCell({x:0,y:0,area:Math.PI*46*46,t:pvType,look:toLook(cz),hd:Math.sin(t*.8)*.6,imm:0,seed:1,name:'',player:true,pv:true,vx:0,vy:0,bump:0});g=og;t=ot}
+  let banked=false,prevLevel=1;function bank(){if(banked)return;const c=runCoins-bankedRun;if(c>0){coins+=c;store.set('coins',coins);bankedRun=runCoins}if(peak>best){best=peak;store.set('best',best)}store.set('xp',xp);saveQuests()}
 let bankedRun=0;
 
 // ============================================================ abilities
@@ -804,7 +798,7 @@ let lastFrame=performance.now();
   const qd=questDay;refreshQuests();if(questDay!==qd&&state==='quests')renderQuests(); // rotates the board on its own every 24h
   if(state==='play'&&player)update(dt);
  draw();
- if(state==='cust')drawPreview(now);
+ if(state==='cust')drawPreview(now);if(state==='cos')drawPreview(now,'cosPrev');
  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
