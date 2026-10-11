@@ -30,7 +30,8 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
 .cosCard button{padding:6px 10px;font-size:14px;min-width:96px}
 .wallet{font-weight:700;color:#5ae682}
 #questS{justify-content:flex-start;overflow:auto;padding:12px 0;gap:8px}#questS h2,#questS p{margin:0}
-#questGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;width:min(860px,94vw)}
+#questGrid,#weekGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;width:min(860px,94vw)}
+.qSec{font-weight:700;font-size:15px;letter-spacing:1px;opacity:.8;margin-top:4px}
 .qCard{display:flex;flex-direction:column;gap:6px;background:#1e1e29;border:2px solid #ffffff26;border-radius:12px;padding:12px;text-align:left}
 .qCard.claimable{border-color:#6ee1b9}
 .qCard.claimed{border-color:#78c8a099;opacity:.72}
@@ -58,7 +59,7 @@ input{background:#1b2440;color:#fff;text-align:center;width:200px}
  <div class="dim">Mouse/touch-stick or WASD to steer · Space = boost · E/Shift = ability · Esc = pause</div></div>
 <div class="scr" id="shopS"><h2>Upgrade Shop</h2><div id="shopInfo" style="font-weight:700;color:#5ae682"></div><div class="dim" id="shopMsg">&nbsp;</div><div id="urows"></div><button id="shopBack">BACK</button></div>
 <div class="scr" id="cosS"><canvas id="cosPrev" width="190" height="190" style="position:static;width:190px;height:190px;background:#10172e;border-radius:16px"></canvas><div class="col"><h2>Accessories</h2><div class="dim" id="cosInfo"></div><div class="dim" id="cosMsg">&nbsp;</div><div id="cosGrid"></div><button id="cosBack">BACK</button></div></div>
-<div class="scr" id="questS"><h2>Daily Quests</h2><div class="dim" id="questInfo"></div><div class="dim" id="questMsg">&nbsp;</div><div id="questGrid"></div><button id="questBack">BACK</button></div>
+<div class="scr" id="questS"><h2>Quests</h2><div class="dim" id="questInfo"></div><div class="dim" id="questMsg">&nbsp;</div><div class="qSec">DAILY — resets daily</div><div id="questGrid"></div><div class="qSec">WEEKLY — resets weekly</div><div id="weekGrid"></div><button id="questBack">BACK</button></div>
 <div class="scr" id="custS"><canvas id="prev" width="190" height="190" style="position:static;width:190px;height:190px;background:#10172e;border-radius:16px"></canvas><div class="col"><h2>Customize</h2><div id="rows" class="col"></div><div class="row"><button id="rnd">RANDOMIZE</button><button id="ptype" style="background:#555"></button><button id="custBack">DONE</button></div></div></div>
 <div class="scr" id="pickS"><h2>Pick your cell</h2><div class="row" id="picks"></div></div>
 <div class="scr" id="pauseS"><h2>Paused</h2><button id="resume">RESUME</button><button id="quit" style="background:#555">QUIT</button></div>
@@ -313,10 +314,10 @@ function renderCosmetics(){
 $('cosmBtn').onclick=()=>{pvType=chosen;refreshStock(true);cosmMsg='';renderCosmetics();setState('cos')};
 $('cosBack').onclick=()=>setState('menu');
 
-// ============================================================ daily quests (Quest.kt / GameView.kt)
-// The board is deterministic per day (QuestBoard.forDay), so only progress/claimed are saved.
+// ============================================================ daily + weekly quests (Quest.kt / GameView.kt)
+// Boards are deterministic per day/week (QuestBoard.forDay/forWeek), so only progress/claimed are saved.
 // Counts add up; SCORE is a running maximum. Timed goals use mm:ss readouts.
-const QUEST_DAILY=3;
+const QUEST_DAILY=3,QUEST_WEEKLY=3;
 const questTimed=g=>g==='PLAY_TYPE'||g==='BOOST'||g==='SURVIVE';
 const mmss=s=>{const v=Math.max(0,Math.floor(s));return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`};
 // Each generator rolls its own numbers from the shared day-seeded RNG, worst -> best.
@@ -330,83 +331,126 @@ const QUEST_GENS=[
  rng=>{const m=[5,10,15][Math.floor(rng()*3)];return{goal:'SURVIVE',type:null,title:`Survive ${m} minutes in total`,target:m*60,rewardCoins:30+6*m,rewardXp:0}},
  rng=>{const n=[8,12,20][Math.floor(rng()*3)];return{goal:'BLOBS',type:null,title:`Eat ${n} dropped blobs`,target:n,rewardCoins:0,rewardXp:25+6*n}}
 ];
-// Deterministic per day, same idea as the cosmetics stock (Java's Random can't be matched exactly).
+// Weekly generators (Quest.kt WEEKLY_GENERATORS): same goals, much higher bands, pays more.
+const WEEKLY_GENS=[
+ rng=>{const n=[30,50,80][Math.floor(rng()*3)];return{goal:'KILLS',type:null,title:`Eat ${n} rival cells`,target:n,rewardCoins:250+n*6,rewardXp:0}},
+ rng=>{const t=Math.floor(rng()*5),m=[20,40,60][Math.floor(rng()*3)];return{goal:'PLAY_TYPE',type:t,title:`Play as ${T[t].n} for ${m} minutes`,target:m*60,rewardCoins:0,rewardXp:120+5*m}},
+ rng=>{const n=[200,350,500][Math.floor(rng()*3)];return{goal:'SCORE',type:null,title:`Reach size ${n} in a single run`,target:n,rewardCoins:300+n/2,rewardXp:0}},
+ rng=>{const n=[800,1500,2500][Math.floor(rng()*3)];return{goal:'PELLETS',type:null,title:`Eat ${n} food pellets`,target:n,rewardCoins:200+n/4,rewardXp:0}},
+ rng=>{const n=[60,100,150][Math.floor(rng()*3)];return{goal:'ABILITIES',type:null,title:`Use your ability ${n} times`,target:n,rewardCoins:0,rewardXp:120+4*n}},
+ rng=>{const s=[300,600,900][Math.floor(rng()*3)];return{goal:'BOOST',type:null,title:`Boost for ${s} seconds`,target:s,rewardCoins:0,rewardXp:150+2*s}},
+ rng=>{const m=[30,60,90][Math.floor(rng()*3)];return{goal:'SURVIVE',type:null,title:`Survive ${m} minutes in total`,target:m*60,rewardCoins:250+5*m,rewardXp:0}},
+ rng=>{const n=[40,80,120][Math.floor(rng()*3)];return{goal:'BLOBS',type:null,title:`Eat ${n} dropped blobs`,target:n,rewardCoins:0,rewardXp:100+5*n}}
+];
+// Deterministic per day/week, same idea as the cosmetics stock (Java's Random can't be matched exactly).
 function questsForDay(day){
  const rng=mulberry32((day*7919+13)>>>0);
  const pool=QUEST_GENS.slice();
  for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));const x=pool[i];pool[i]=pool[j];pool[j]=x}
  return Array.from({length:QUEST_DAILY},(_,i)=>pool[i](rng));
 }
-let quests=[],questProgress=[0,0,0],questClaimed=[false,false,false],questDay=null,questMsg='',questsDirty=false,questSaveT=5;
-function saveQuests(){store.set('quest_day',questDay);store.set('quest_p',questProgress);store.set('quest_c',questClaimed);questsDirty=false;questSaveT=5}
+const weekIndexOf=ms=>ms<=0?0:Math.floor(dayIndex(ms)/7);
+function questsForWeek(week){
+ const rng=mulberry32((week*104729+7)>>>0);
+ const pool=WEEKLY_GENS.slice();
+ for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));const x=pool[i];pool[i]=pool[j];pool[j]=x}
+ return Array.from({length:QUEST_WEEKLY},(_,i)=>pool[i](rng));
+}
+function msUntilWeekReset(ms){const d=Math.floor(dayIndex(ms)%7);const left=d===0?7:7-d;return left*DAY_MS-(ms%DAY_MS)}
+let quests=[],questProgress=Array(QUEST_DAILY).fill(0),questClaimed=Array(QUEST_DAILY).fill(false),questDay=null;
+let weeklyQuests=[],weeklyProgress=Array(QUEST_WEEKLY).fill(0),weeklyClaimed=Array(QUEST_WEEKLY).fill(false),weekIdx=null;
+let questMsg='',questsDirty=false,questSaveT=5;
+function saveQuests(){store.set('quest_day',questDay);store.set('quest_p',questProgress);store.set('quest_c',questClaimed);store.set('week_i',weekIdx);store.set('week_p',weeklyProgress);store.set('week_c',weeklyClaimed);questsDirty=false;questSaveT=5}
 function refreshQuests(){
  const day=dayIndex(Date.now());
- if(day===questDay)return; // already built for today - keep live in-memory progress
- questDay=day;quests=questsForDay(day);
- if(store.get('quest_day',null)===day){
-  const p=store.get('quest_p',[]),c=store.get('quest_c',[]);
-  for(let i=0;i<quests.length;i++){questProgress[i]=Number(p[i])||0;questClaimed[i]=!!c[i]}
- }else{ // new day (or first launch): wipe yesterday's progress
-  for(let i=0;i<quests.length;i++){questProgress[i]=0;questClaimed[i]=false}
-  saveQuests();
+ if(day!==questDay){ // daily rolled over (or first launch) - keep live progress only if same day
+  questDay=day;quests=questsForDay(day);
+  if(store.get('quest_day',null)===day){
+   const p=store.get('quest_p',[]),c=store.get('quest_c',[]);
+   for(let i=0;i<quests.length;i++){questProgress[i]=Number(p[i])||0;questClaimed[i]=!!c[i]}
+  }else{ // new day (or first launch): wipe yesterday's progress
+   for(let i=0;i<quests.length;i++){questProgress[i]=0;questClaimed[i]=false}
+   saveQuests();
+  }
+  refreshQuestBadge();
  }
- refreshQuestBadge();
+ const week=weekIndexOf(Date.now());
+ if(week!==weekIdx){
+  weekIdx=week;weeklyQuests=questsForWeek(week);
+  if(store.get('week_i',null)===week){
+   const p=store.get('week_p',[]),c=store.get('week_c',[]);
+   for(let i=0;i<weeklyQuests.length;i++){weeklyProgress[i]=Number(p[i])||0;weeklyClaimed[i]=!!c[i]}
+  }else{ // new week (or first launch): wipe last week's progress
+   for(let i=0;i<weeklyQuests.length;i++){weeklyProgress[i]=0;weeklyClaimed[i]=false}
+   saveQuests();
+  }
+  refreshQuestBadge();
+ }
 }
-function questsClaimable(){let n=0;for(let i=0;i<quests.length;i++)if(!questClaimed[i]&&questProgress[i]>=quests[i].target)n++;return n}
+function questsClaimable(){let n=0;for(let i=0;i<quests.length;i++)if(!questClaimed[i]&&questProgress[i]>=quests[i].target)n++;for(let i=0;i<weeklyQuests.length;i++)if(!weeklyClaimed[i]&&weeklyProgress[i]>=weeklyQuests[i].target)n++;return n}
 function refreshQuestBadge(){const b=$('qBadge');if(!b)return;const n=questsClaimable();b.textContent=n;b.style.display=n>0?'block':'none'}
-function addQuestProgress(goal,amount,type){
- for(let i=0;i<quests.length;i++){
-  const q=quests[i];
-  if(q.goal!==goal||questClaimed[i])continue;
+function addToBoard(board,progress,claimed,goal,amount,type){
+ for(let i=0;i<board.length;i++){
+  const q=board[i];
+  if(q.goal!==goal||claimed[i])continue;
   if(q.type!=null&&q.type!==type)continue;
-  if(questProgress[i]>=q.target)continue;
-  questProgress[i]=goal==='SCORE'?Math.max(questProgress[i],amount):Math.min(questProgress[i]+amount,q.target);
+  if(progress[i]>=q.target)continue;
+  progress[i]=goal==='SCORE'?Math.max(progress[i],amount):Math.min(progress[i]+amount,q.target);
   questsDirty=true;
-  if(questProgress[i]>=q.target){ // just completed: tell the player, save right away
+  if(progress[i]>=q.target){ // just completed: tell the player, save right away
    questMsg='Quest complete: '+q.title;
    feed.push({t:3.5,txt:'Quest complete! Claim it in QUESTS'});
    saveQuests();refreshQuestBadge();
   }
  }
 }
-function claimQuest(slot){
- const q=quests[slot];if(!q)return;
- if(questClaimed[slot]){questMsg='Already claimed';return renderQuests()}
- if(questProgress[slot]<q.target){questMsg='Not finished yet';return renderQuests()}
- questClaimed[slot]=true;
+function addQuestProgress(goal,amount,type){
+ addToBoard(quests,questProgress,questClaimed,goal,amount,type);
+ addToBoard(weeklyQuests,weeklyProgress,weeklyClaimed,goal,amount,type);
+}
+function claimQuest(slot,isWeekly){
+ const board=isWeekly?weeklyQuests:quests,progress=isWeekly?weeklyProgress:questProgress,claimed=isWeekly?weeklyClaimed:questClaimed;
+ const q=board[slot];if(!q)return;
+ if(claimed[slot]){questMsg='Already claimed';return renderQuests()}
+ if(progress[slot]<q.target){questMsg='Not finished yet';return renderQuests()}
+ claimed[slot]=true;
  if(q.rewardCoins>0){coins+=q.rewardCoins;store.set('coins',coins)}
  if(q.rewardXp>0){xp+=q.rewardXp;store.set('xp',xp)}
  saveQuests();refreshStats();refreshQuestBadge();
  questMsg=`Claimed ${q.title}: `+(q.rewardXp>0?`+${q.rewardXp} XP`:`+${q.rewardCoins} Biocoins`);
  renderQuests();
 }
+function questCard(q,progress,claimed,onClaim){
+ const complete=progress>=q.target,claimable=complete&&!claimed;
+ const frac=clamp01(progress/Math.max(.0001,q.target));
+ const d=document.createElement('div');d.className='qCard'+(claimable?' claimable':claimed?' claimed':'');
+ const top=document.createElement('div');top.className='qTop';
+ const tag=document.createElement('span');tag.textContent=q.goal.replace('_',' ');
+ const rew=document.createElement('span');rew.textContent=q.rewardCoins>0?`⬤ ${q.rewardCoins}`:`+${q.rewardXp} XP`;
+ rew.style.color=q.rewardCoins>0?BIO:'#96e6ff';
+ top.append(tag,rew);
+ const title=document.createElement('div');title.className='qTitle';title.textContent=q.title;
+ const prog=document.createElement('div');prog.className='qProg';
+ prog.textContent=questTimed(q.goal)?`${mmss(Math.min(progress,q.target))} / ${mmss(q.target)}`:`${Math.floor(progress)} / ${Math.floor(q.target)}`;
+ prog.style.color=complete?'#6ee1b9':'#fff';
+ const bar=document.createElement('div');bar.className='qBar';const fill=document.createElement('i');fill.style.width=(frac*100)+'%';bar.appendChild(fill);
+ const b=document.createElement('button');
+ if(claimed){b.textContent='CLAIMED';b.style.background='#26463a';b.disabled=true}
+ else if(claimable){b.textContent='CLAIM REWARD';b.style.background='#2da069'}
+ else{b.textContent='IN PROGRESS';b.style.background='#2e313f'}
+ b.onclick=onClaim;
+ d.append(top,title,prog,bar,b);return d;
+}
 function renderQuests(){
- const rem=msUntilReset(Date.now()),hrs=Math.floor(rem/3600000),mins=Math.floor(rem/60000)%60;
- let claimedCount=0;for(let i=0;i<quests.length;i++)if(questClaimed[i])claimedCount++;
- $('questInfo').innerHTML=`⬤ <span class="wallet">${coins}</span> Biocoins · New quests in ${hrs}h ${String(mins).padStart(2,'0')}m · ${claimedCount} of ${quests.length} claimed`;
+ const now=Date.now(),rem=msUntilReset(now),hrs=Math.floor(rem/3600000),mins=Math.floor(rem/60000)%60;
+ const wrem=msUntilWeekReset(now),whrs=Math.floor(wrem/3600000),wdays=Math.floor(wrem/86400000),whr2=Math.floor(wrem%86400000/3600000);
+ let dc=0,wc=0;for(let i=0;i<quests.length;i++)if(questClaimed[i])dc++;for(let i=0;i<weeklyQuests.length;i++)if(weeklyClaimed[i])wc++;
+ $('questInfo').innerHTML=`⬤ <span class="wallet">${coins}</span> Biocoins · Daily in ${hrs}h ${String(mins).padStart(2,'0')}m (${dc}/${quests.length}) · Weekly in ${wdays}d ${whr2}h (${wc}/${weeklyQuests.length})`;
  $('questMsg').textContent=questMsg||'Finish quests by playing — tap a finished one to claim its reward';
  const grid=$('questGrid');grid.innerHTML='';
- quests.forEach((q,i)=>{
-  const progress=questProgress[i],claimed=questClaimed[i],complete=progress>=q.target,claimable=complete&&!claimed;
-  const frac=clamp01(progress/Math.max(.0001,q.target));
-  const d=document.createElement('div');d.className='qCard'+(claimable?' claimable':claimed?' claimed':'');
-  const top=document.createElement('div');top.className='qTop';
-  const tag=document.createElement('span');tag.textContent=q.goal.replace('_',' ');
-  const rew=document.createElement('span');rew.textContent=q.rewardCoins>0?`⬤ ${q.rewardCoins}`:`+${q.rewardXp} XP`;
-  rew.style.color=q.rewardCoins>0?BIO:'#96e6ff';
-  top.append(tag,rew);
-  const title=document.createElement('div');title.className='qTitle';title.textContent=q.title;
-  const prog=document.createElement('div');prog.className='qProg';
-  prog.textContent=questTimed(q.goal)?`${mmss(Math.min(progress,q.target))} / ${mmss(q.target)}`:`${Math.floor(progress)} / ${Math.floor(q.target)}`;
-  prog.style.color=complete?'#6ee1b9':'#fff';
-  const bar=document.createElement('div');bar.className='qBar';const fill=document.createElement('i');fill.style.width=(frac*100)+'%';bar.appendChild(fill);
-  const b=document.createElement('button');
-  if(claimed){b.textContent='CLAIMED';b.style.background='#26463a';b.disabled=true}
-  else if(claimable){b.textContent='CLAIM REWARD';b.style.background='#2da069'}
-  else{b.textContent='IN PROGRESS';b.style.background='#2e313f'}
-  b.onclick=()=>claimQuest(i);
-  d.append(top,title,prog,bar,b);grid.appendChild(d);
- });
+ quests.forEach((q,i)=>grid.appendChild(questCard(q,questProgress[i],questClaimed[i],()=>claimQuest(i,false))));
+ const wg=$('weekGrid');wg.innerHTML='';
+ weeklyQuests.forEach((q,i)=>wg.appendChild(questCard(q,weeklyProgress[i],weeklyClaimed[i],()=>claimQuest(i,true))));
 }
 $('questsBtn').onclick=()=>{refreshQuests();questMsg='';renderQuests();setState('quests')};
 $('questBack').onclick=()=>setState('menu');
@@ -824,7 +868,7 @@ refreshStats();syncMute();refreshQuests();
 let lastFrame=performance.now();
  function frame(now){
   let dt=(now-lastFrame)/1000;lastFrame=now;if(dt>.05)dt=.05;if(dt<0)dt=0;
-  const qd=questDay;refreshQuests();if(questDay!==qd&&state==='quests')renderQuests(); // rotates the board on its own every 24h
+  const qd=questDay,qw=weekIdx;refreshQuests();if((questDay!==qd||weekIdx!==qw)&&state==='quests')renderQuests(); // rotates the boards on their own
   if(state==='play'&&player)update(dt);
  draw();
  if(state==='cust')drawPreview(now);if(state==='cos')drawPreview(now,'cosPrev');
