@@ -193,10 +193,23 @@ function placeSafe(c){for(let i=0;i<20;i++){c.x=rnd(100,W-100);c.y=rnd(100,W-100
 function mkBot(){const r=R0+Math.random()*30;const b=mkCell(ri(5),false);b.area=Math.PI*r*r;b.imm=SPAWN_IMM;b.name=uniqueBotName();b.look=uniqueBotLook();b.wa=rnd(0,6.28);placeSafe(b);botTraits(b);return b}
 function newPellet(p){p=p||{};p.x=rnd(30,W-30);p.y=rnd(30,W-30);p.col=`hsl(${ri(360)},80%,62%)`;p.trail=false;p.gone=false;return p}
 function startGame(type){
- chosen=type;bankedRun=0;parts=[];feed=[];cells=[];pellets=[];trails=0;fx=[];peak=0;kills=0;runCoins=0;runKillCoins=0;killer=null;
+ chosen=type;bankedRun=0;parts=[];feed=[];
+ const fresh=cells.length===0||pellets.length===0; // first run builds the world; replays reuse it snake.io-style
+ const oldPlayer=player;
+ if(fresh){cells=[];pellets=[];trails=0}
+ else{
+  cells=cells.filter(c=>!c.player); // drop the old corpse, keep every bot exactly as it was
+  trails=0;for(const p of pellets)if(p.trail)trails++; // sprint blobs persisted - recount them
+ }
+ fx=[];peak=0;kills=0;runCoins=0;runKillCoins=0;killer=null;
  player=mkCell(type,true);player.name=pname||'Player';player.look=toLook(cz);player.imm=shieldT();player.x=W/2;player.y=W/2;cells.push(player);
- for(let i=0;i<BOTS;i++)cells.push(mkBot());
- for(let i=0;i<PELLETS;i++)pellets.push(newPellet());
+ if(fresh){for(let i=0;i<BOTS;i++)cells.push(mkBot());for(let i=0;i<PELLETS;i++)pellets.push(newPellet())}
+ else{ // re-point stale refs at the new body so bots don't chase a corpse and old trails stay yours
+  for(const p of pellets)if(p.by===oldPlayer)p.by=player;
+  for(const c of cells){if(c===player)continue;if(c.hunt===oldPlayer){c.hunt=null;c.huntLock=0}
+   if(c.sThreats){const ti=c.sThreats.indexOf(oldPlayer);if(ti>=0)c.sThreats.splice(ti,1)}
+   if(c.sPreys){const pi=c.sPreys.indexOf(oldPlayer);if(pi>=0)c.sPreys.splice(pi,1)}}
+ }
  setState('play')}
 function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead','cosS','questS'])document.getElementById(id).classList.remove('on');
  const m={menu:'menu',shop:'shopS',cust:'custS',pick:'pickS',pause:'pauseS',dead:'dead',cos:'cosS',quests:'questS'}[s];if(m)document.getElementById(m).classList.add('on');
