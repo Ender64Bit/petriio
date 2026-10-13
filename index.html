@@ -201,14 +201,17 @@ let ownedCos=new Set(store.get('owned',[]));
 const xpStep=l=>120+(l-1)*60;
 function level(){let l=1,r=xp;while(r>=xpStep(l)){r-=xpStep(l);l++}return{l,into:r,need:xpStep(l)}}
 // ============================================================ type mastery (TypeMastery.kt port)
-// Each cell type has its own persistent XP bar (mxp_* in Kotlin, 'mxp' array here) that
-// unlocks that type's ability upgrades. Earned via kills (same XP as generic level),
-// a per-second trickle next to the PLAY_TYPE quest hook, ability uses, and PLAY_TYPE
-// quest claim bonuses. Player uses their mastery level; bots always use Lv 1.
-const M_MAX=3,M_XP=[0,150,400],M_XP_PER_SEC=.25,M_XP_PER_AB=4;
-const mLevel=t=>{let l=1;for(let i=0;i<M_XP.length;i++)if(typeXp[t]>=M_XP[i])l=i+1;return Math.max(1,Math.min(M_MAX,l))};
-const mInto=(t,l)=>Math.max(0,typeXp[t]-M_XP[Math.max(0,Math.min(M_MAX-1,l-1))]);
-const mNeed=l=>l>=M_MAX?0:M_XP[l]-M_XP[l-1];
+// Each cell type has its own persistent prey-kill task ('mxp2' array) that unlocks that
+// type's ability upgrades: 100 kills of the type you beat for M2, 250 for M3 (Virus beats
+// Bacteria, Bacteria beats Fungus, Fungus beats Prion, Prion beats Amoeba, Amoeba beats
+// Virus). Player uses their mastery level; bots always use Lv 1.
+const M_MAX=3,M_KILLS=[0,100,250];
+const mLevel=t=>{let l=1;for(let i=0;i<M_KILLS.length;i++)if(typeKills[t]>=M_KILLS[i])l=i+1;return Math.max(1,Math.min(M_MAX,l))};
+const mInto=(t,l)=>Math.max(0,typeKills[t]-M_KILLS[Math.max(0,Math.min(M_MAX-1,l-1))]);
+const mNeed=l=>l>=M_MAX?0:M_KILLS[l]-M_KILLS[l-1];
+const mPrey=t=>(t+1)%5; // the prey whose kills count toward t's mastery
+const mPreyPlural=t=>['Viruses','Bacteria','Fungi','Prions','Amoebas'][mPrey(t)];
+const mTask=(t,n)=>n>M_MAX?'MAX':`Eat ${M_KILLS[n-1]} ${mPreyPlural(t)} as ${T[t].n}`;
 const mSiphon=l=>l>=3?1.8:l>=2?1.4:1;               // Virus Sniper tiers
 const mOverdriveDur=l=>l>=3?5:l>=2?4:3;             // Bacteria duration (s)
 const mOverdrive=l=>l>=3?1.65:l>=2?1.55:1.45;       // Bacteria speed mult
@@ -225,20 +228,17 @@ const mBlurb=(t,n)=>{
  if(t===2)return n===2?'Spores+: wider burst, longer slow':'Spores++: huge burst, 4s slow';
  if(t===3)return n===2?'Fortify+: +1s immunity':'Fortify++: +2s, fast recharge';
  return n===2?'Lunge+: faster dash':'Double-lunge: stronger + 6s recharge'};
-let typeXp=store.get('mxp',[0,0,0,0,0]);if(!Array.isArray(typeXp)||typeXp.length!==5)typeXp=[0,0,0,0,0];typeXp=typeXp.map(v=>Math.max(0,Math.floor(Number(v)||0)));
-let typeXpFrac=[0,0,0,0,0],masteryToastUntil=0,masteryToastTxt='';
-function addTypeXp(t,amt){
- if(!(amt>0)||t<0||t>4)return;
+let typeKills=store.get('mxp2',[0,0,0,0,0]);if(!Array.isArray(typeKills)||typeKills.length!==5)typeKills=[0,0,0,0,0];typeKills=typeKills.map(v=>Math.max(0,Math.floor(Number(v)||0)));
+let masteryToastUntil=0,masteryToastTxt='';
+function addMasteryKill(t){
+ if(t<0||t>4)return;
  const old=mLevel(t);
- typeXpFrac[t]+=amt;
- const whole=Math.floor(typeXpFrac[t]);
- if(whole>0){typeXpFrac[t]-=whole;typeXp[t]+=whole}
- else if(typeXpFrac[t]<1&&amt<1)return; // fractional trickle only — no save yet
- store.set('mxp',typeXp);
+ typeKills[t]++;
+ store.set('mxp2',typeKills);
  const nl=mLevel(t);
  if(nl>old){
-  masteryToastTxt=`${T[t].n} ${mTag(nl)}! ${mBlurb(t,nl)}`;
-  masteryToastUntil=performance.now()+2600;
+  masteryToastTxt=`${T[t].n} ${mTag(nl)} UNLOCKED! ${mBlurb(t,nl)}`;
+  masteryToastUntil=performance.now()+3000;
   feed.push({t:3.5,txt:masteryToastTxt});
   if(player&&player.t===t)player.odM=mOverdrive(nl);
   if(state==='pick')renderPicks();
@@ -327,8 +327,8 @@ function syncMute(){$('muteBtn').textContent=AudioSys.isEnabled()?'🔊':'🔇'}
 for(let i=0;i<5;i++){const b=document.createElement('button');b.className='pick';b.style.background=T[i].c;
  b.innerHTML=`${T[i].n}<small>${T[i].ab}: ${T[i].bl}</small><small>Eats ${T[(i+1)%5].n}<br>Eaten by ${T[(i+4)%5].n}</small>`;const ms=document.createElement('small');ms.style.color='#96e6ff';b.appendChild(ms);b._ms=ms;const nx=document.createElement('small');nx.style.color='#ffd75a';nx.style.fontSize='11px';b.appendChild(nx);b._nx=nx;b.onclick=()=>{if(typeof pendingLan!=='undefined'&&pendingLan){const p=pendingLan;pendingLan=null;startLanGame(p,i)}else startGame(i)};$('picks').appendChild(b)}
 function renderPicks(){for(let i=0;i<5;i++){const b=$('picks').children[i];if(!b)continue;const l=mLevel(i);
- b._ms.textContent=l>=M_MAX?`${mTag(l)} MAX`:l>=2?`${mTag(l)} ${mInto(i,l)}/${mNeed(l)} XP · ${mBlurb(i,l).split(':')[0]}`:`${mTag(l)} ${mInto(i,l)}/${mNeed(l)} XP`;
- b._nx.textContent=l>=M_MAX?`${T[i].ab} fully upgraded`:`Next: ${mBlurb(i,l+1)}`}}
+ b._ms.textContent=l>=M_MAX?`${mTag(l)} MAX`:`${mTag(l)} ${mInto(i,l)}/${mNeed(l)} ${mPreyPlural(i)}`;
+ b._nx.textContent=l>=M_MAX?`${T[i].ab} fully upgraded`:`${T[i].n} ${mTag(l)} → ${mTag(l+1)}: ${mBlurb(i,l+1)}`}}
 
 // ============================================================ juice
 let parts=[],feed=[];
@@ -493,7 +493,6 @@ function claimQuest(slot,isWeekly){
  claimed[slot]=true;
  if(q.rewardCoins>0){coins+=q.rewardCoins;store.set('coins',coins)}
  if(q.rewardXp>0){xp+=q.rewardXp;store.set('xp',xp)}
- if(q.goal==='PLAY_TYPE'&&q.type!=null&&q.rewardXp>0)addTypeXp(q.type,q.rewardXp);
  saveQuests();refreshStats();refreshQuestBadge();
  questMsg=`Claimed ${q.title}: `+(q.rewardXp>0?`+${q.rewardXp} XP`:`+${q.rewardCoins} Biocoins`);
  renderQuests();
@@ -1173,7 +1172,7 @@ function activate(c,ang){if(c.cd>0)return false;const ml=c.player?mLevel(c.t):1;
  else if(c.t===2){ringR=r*mFungusR(ml);for(const o of cells)if(o!==c&&o.alive&&Math.hypot(o.x-c.x,o.y-c.y)<ringR+rad(o))o.slow=mFungusSlow(ml)}
  else if(c.t===3){c.imm=Math.max(c.imm,mFortify(ml));ringR=r*1.5}
  else{const sp=mLunge(ml);c.kx+=Math.cos(ang)*sp;c.ky+=Math.sin(ang)*sp;ringR=r*1.4}
- c.cd=mCd(c.t,ml);fx.push({x:c.x,y:c.y,r:ringR,col:T[c.t].c,t:0});if(c.player){AudioSys.power();addQuestProgress('ABILITIES',1);addTypeXp(c.t,M_XP_PER_AB)}return true}
+ c.cd=mCd(c.t,ml);fx.push({x:c.x,y:c.y,r:ringR,col:T[c.t].c,t:0});if(c.player){AudioSys.power();addQuestProgress('ABILITIES',1)}return true}
 function siphonR(c){const base=400+rad(c)*2;return c.player?base*reachM()*mSiphon(mLevel(c.t)):base}
 const gain=(c,p)=>(p.trail?p.value:PEL_GAIN)*(c.player?gainM():1);
 // ---- pellet consumption (GameView.kt consumePellet / removePelletAt / handlePellets) ----
@@ -1330,11 +1329,11 @@ function update(dt){
   let e,v;if(canEat(a,b)){e=a;v=b}else if(canEat(b,a)){e=b;v=a}else{overlap(a,b);continue}
   const reach=rad(e)+rad(v)*EAT_OV;
    if((e.x-v.x)**2+(e.y-v.y)**2<reach*reach){e.area+=Math.min(v.area*ABSORB,e.area*1.5)*(e.player?gainM():1);v.alive=false;
-    if(v.player)killer=e;else if(e.player){burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});const before=level().l;const killXp=XP_KILL_BASE+Math.floor(v.area/XP_KILL_AREA_DIV);xp+=killXp;addTypeXp(e.t,killXp);if(level().l>before)levelUpUntil=performance.now()+2200;runKillCoins+=COIN_PER_KILL+Math.floor(score(v.area)/COIN_KILL_DIV);addQuestProgress('KILLS',1,v.t);AudioSys.kill()}else if(e.remote){hostDing(e.pid,v.name)}}}
+    if(v.player)killer=e;else if(e.player){burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});const before=level().l;const killXp=XP_KILL_BASE+Math.floor(v.area/XP_KILL_AREA_DIV);xp+=killXp;if(beats(e.t,v.t))addMasteryKill(e.t);if(level().l>before)levelUpUntil=performance.now()+2200;runKillCoins+=COIN_PER_KILL+Math.floor(score(v.area)/COIN_KILL_DIV);addQuestProgress('KILLS',1,v.t);AudioSys.kill()}else if(e.remote){hostDing(e.pid,v.name)}}}
   for(const c of cells)if(!c.alive){if(c.player){if(state!=='dead')die()}else if(c.remote){}else{const r=R0+Math.random()*30;c.t=ri(5);c.area=Math.PI*r*r;c.alive=true;c.name=uniqueBotName();c.look=uniqueBotLook();c.imm=SPAWN_IMM;c.hunt=null;c.tgt=null;c.od=c.slow=0;c.odM=1.45;c.cd=0;c.boost=false;c.fl=0;c.huntLock=0;c.lock=0;c.bump=0;c.aiSeed=ri(1000000);botTraits(c);placeSafe(c)}}
   if(net.mode==='host'){broadcastSnap();sweepLanGuests()}
   peak=Math.max(peak,score(player.area));runCoins=Math.floor(peak/COIN_SCORE_PER)+runKillCoins;
-  if(player.alive){addQuestProgress('SURVIVE',dt);addQuestProgress('PLAY_TYPE',dt,player.t);addTypeXp(player.t,M_XP_PER_SEC*dt);addQuestProgress('SCORE',peak)}
+  if(player.alive){addQuestProgress('SURVIVE',dt);addQuestProgress('PLAY_TYPE',dt,player.t);addQuestProgress('SCORE',peak)}
  if(questsDirty){questSaveT-=dt;if(questSaveT<=0)saveQuests()}
  for(const q of parts){q.x+=q.vx*dt;q.y+=q.vy*dt;q.l-=dt}parts=parts.filter(q=>q.l>0);for(const f of feed)f.t-=dt;feed=feed.filter(f=>f.t>0);
  for(const f of fx)f.t+=dt;fx=fx.filter(f=>f.t<.28);
