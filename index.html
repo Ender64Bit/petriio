@@ -246,11 +246,9 @@ function addTypeXp(t,amt){
 }
 const score=a=>Math.max(0,Math.floor((a-A0)/100));
 function mkCell(type,isPlayer){return{x:rnd(100,W-100),y:rnd(100,W-100),area:A0,t:type,player:!!isPlayer,name:'',look:randLook(),vx:0,vy:0,kx:0,ky:0,hd:rnd(0,6.28),alive:true,imm:0,cd:0,od:0,odM:1.45,slow:0,boost:false,spT:0,bump:0,bumpAng:0,tgt:null,tgtX:0,tgtY:0,lock:0,wa:rnd(0,6.28),fl:0,fleeAng:0,hunt:null,huntLock:0,aiSeed:ri(1000000),seed:Math.random()*100,aggr:1,caution:1,greed:1,skill:.5,patience:.4,boostiness:1,jit:0,senseT:0,sThreats:[],sPreys:[],sightSq:490000,idleT:0,ease:.7,boostHold:0,boostCd:0}}
-// personality + slightly noisy human-ish movement, derived from the bot's aiSeed
+// personality from the bot's seed — the same lean model as Android (aggression + caution only)
 function botTraits(c){const s=c.aiSeed|0;
- c.aggr=.75+(s%50)/100;c.caution=.8+((s>>6)%50)/100;c.greed=.7+((s>>12)%60)/100;
- c.skill=.35+((s>>9)%64)/64*.6;c.patience=.15+((s>>17)%50)/50*.75;c.boostiness=.5+((s>>23)%50)/50*.8;
- c.ease=.5+((s>>3)%50)/50*.5;c.jit=0;if(c.vhd===undefined)c.vhd=c.hd;c.senseT=0;c.sThreats=[];c.sPreys=[];c.sightSq=490000;c.idleT=0;c.boostHold=0;c.boostCd=0}
+ c.aggr=.8+(s%50)/100;c.caution=.8+((s>>6)%50)/100}
 function placeSafe(c){for(let i=0;i<20;i++){c.x=rnd(100,W-100);c.y=rnd(100,W-100);if(!player||Math.hypot(c.x-player.x,c.y-player.y)>900)break}}
 function mkBot(){const r=R0+Math.random()*30;const b=mkCell(ri(5),false);b.area=Math.PI*r*r;b.imm=SPAWN_IMM;b.name=uniqueBotName();b.look=uniqueBotLook();b.wa=rnd(0,6.28);placeSafe(b);botTraits(b);return b}
 function newPellet(p){p=p||{};p.x=rnd(30,W-30);p.y=rnd(30,W-30);p.hue=ri(360);p.col=`hsl(${p.hue},80%,62%)`;p.trail=false;p.gone=false;return p}
@@ -268,9 +266,7 @@ function startGame(type){
  if(fresh){for(let i=0;i<BOTS;i++)cells.push(mkBot());for(let i=0;i<PELLETS;i++)pellets.push(newPellet())}
  else{ // re-point stale refs at the new body so bots don't chase a corpse and old trails stay yours
   for(const p of pellets)if(p.by===oldPlayer)p.by=player;
-  for(const c of cells){if(c===player)continue;if(c.hunt===oldPlayer){c.hunt=null;c.huntLock=0}
-   if(c.sThreats){const ti=c.sThreats.indexOf(oldPlayer);if(ti>=0)c.sThreats.splice(ti,1)}
-   if(c.sPreys){const pi=c.sPreys.indexOf(oldPlayer);if(pi>=0)c.sPreys.splice(pi,1)}}
+  for(const c of cells){if(c===player)continue;if(c.hunt===oldPlayer){c.hunt=null;c.huntLock=0}}
  }
  setState('play')}
 function setState(s){state=s;for(const id of['menu','shopS','custS','pickS','pauseS','dead','cosS','questS','lanS','sigS'])document.getElementById(id).classList.remove('on');
@@ -398,7 +394,7 @@ $('cosBack').onclick=()=>setState('menu');
 // ============================================================ daily + weekly quests (Quest.kt / GameView.kt)
 // Boards are deterministic per day/week (QuestBoard.forDay/forWeek), so only progress/claimed are saved.
 // Counts add up; SCORE is a running maximum. Timed goals use mm:ss readouts.
-const QUEST_DAILY=3,QUEST_WEEKLY=3;
+const QUEST_DAILY=5,QUEST_WEEKLY=3;
 const questTimed=g=>g==='PLAY_TYPE'||g==='BOOST'||g==='SURVIVE';
 const mmss=s=>{const v=Math.max(0,Math.floor(s));return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`};
 // Each generator rolls its own numbers from the shared day-seeded RNG, worst -> best.
@@ -1227,7 +1223,7 @@ function updateSprint(dt){for(const c of cells){
 // ============================================================ bot AI (GameView.kt updateBot)
 // Heading is a persistent angle that always turns at a limited rate (never snaps), so cells visibly
 // rotate toward where they want to go instead of teleporting to face it.
-function steerBot(b,dx,dy,speed,dt,turnRate){const desired=Math.atan2(dy,dx)+b.jit,diff=wrap(desired-b.hd),mt=turnRate*dt;
+function steerBot(b,dx,dy,speed,dt,turnRate){const desired=Math.atan2(dy,dx),diff=wrap(desired-b.hd),mt=turnRate*dt;
  b.hd+=Math.max(-mt,Math.min(mt,diff));
  const cur=Math.hypot(b.vx,b.vy),ns=cur+(speed-cur)*(1-Math.exp(-BOT_SPEED_RESPONSE*dt));
  b.vx=Math.cos(b.hd)*ns;b.vy=Math.sin(b.hd)*ns}
@@ -1244,8 +1240,7 @@ function chooseFleeAngle(b,threats,speed,keepHeading){const r=rad(b),travel=Math
    const px=b.x+sx*pu-th.x,py=b.y+sy*pu-th.y;const pathM=Math.sqrt(px*px+py*py)-rad(th)-r-reach*.5;
    minMargin=Math.min(minMargin,Math.min(endM,pathM))}
   let score=minMargin;const wall=Math.min(cx,W-cx,cy,W-cy)-r;if(wall<250)score-=(250-wall)*.8;
-  score-=(travel-Math.sqrt(len2))*1.5;score+=Math.min(food[k],6)*3;if(keepHeading)score+=35*Math.cos(wrap(a-b.fleeAng));
-  score+=(Math.random()-.5)*(1-b.skill)*(keepHeading?45:230); // low-skill bots flee imperfectly
+   score-=(travel-Math.sqrt(len2))*1.5;score+=Math.min(food[k],6)*3;if(keepHeading)score+=35*Math.cos(wrap(a-b.fleeAng));
   if(score>bestScore){bestScore=score;bestAngle=a}}
  return bestAngle}
 function foodSafety(p,threats){for(const th of threats){if(!isRealThreat(th))continue;const dx=p.x-th.x,dy=p.y-th.y,danger=rad(th)+220+maxSpeed(th)*.4;if(dx*dx+dy*dy<danger*danger)return .15}return 1}
@@ -1259,8 +1254,6 @@ function tryBotOffensiveAbility(b,target,dist,aggr,lungeAngle,dangerNearby){if(b
  else if(b.t===4)use=gap>30&&gap<140;
  if(use)activate(b,lungeAngle)}
 function forageOrWander(b,sightSq,threats,dt){const cur=b.tgt;
- if(b.idleT>0){b.idleT-=dt;b.wa+=rnd(-1,1)*.9*dt;steerBot(b,Math.cos(b.wa),Math.sin(b.wa),maxSpeed(b)*.1,dt,BOT_TURN);return}
- if(Math.random()<dt*b.patience*.09){b.idleT=rnd(.15,.5);return} // occasional human-like pause
  const curOk=cur&&cur.alive&&!cur.gone&&cur.x===b.tgtX&&cur.y===b.tgtY&&!(cur.trail&&cur.by===b)&&((b.x-cur.x)**2+(b.y-cur.y)**2)<=sightSq;
  if(!curOk||b.lock<=0){let best=null,bestScore=-1,curScore=-1;
   const canSiphon=b.t===0&&b.cd<=0,sr=siphonR(b),srSq=sr*sr;let siphonCount=0;
@@ -1269,29 +1262,22 @@ function forageOrWander(b,sightSq,threats,dt){const cur=b.tgt;
    const d=Math.sqrt(dSq),sc=(p.trail?2.5:1)/(1+d/90)*foodSafety(p,threats);
    if(sc>bestScore){bestScore=sc;best=p}if(p===cur)curScore=sc}
   if(best&&curOk&&curScore*FOOD_SWITCH>=bestScore)best=cur;
-  b.tgt=best;if(best){b.tgtX=best.x;b.tgtY=best.y}b.lock=FOOD_LOCK*(.7+.6*b.greed);
+  b.tgt=best;if(best){b.tgtX=best.x;b.tgtY=best.y}b.lock=FOOD_LOCK;
   if(canSiphon&&siphonCount>=BOT_SIPHON_MIN){activate(b,b.hd);b.tgt=null;b.lock=0}}
  const ft=b.tgt;
- if(ft){const dx=ft.x-b.x,dy=ft.y-b.y,d=Math.max(1,Math.hypot(dx,dy));steerBot(b,dx/d,dy/d,maxSpeed(b)*(.82+.18*b.ease),dt,BOT_TURN);return}
- if(Math.random()<dt*b.patience*.3){b.idleT=rnd(.2,.8);return}
+ if(ft){const dx=ft.x-b.x,dy=ft.y-b.y,d=Math.max(1,Math.hypot(dx,dy));steerBot(b,dx/d,dy/d,maxSpeed(b),dt,BOT_TURN);return}
  if(Math.random()<dt*.4)b.wa+=rnd(-1,1)*1.2;
  let wx=Math.cos(b.wa),wy=Math.sin(b.wa);const margin=350;let px=0,py=0;
  if(b.x<margin)px+=(margin-b.x)/margin;if(b.x>W-margin)px-=(b.x-(W-margin))/margin;
  if(b.y<margin)py+=(margin-b.y)/margin;if(b.y>W-margin)py-=(b.y-(W-margin))/margin;
  if(px||py){wx+=px*2.5;wy+=py*2.5;b.wa=Math.atan2(wy,wx)}
- const heading=Math.atan2(wy,wx);steerBot(b,Math.cos(heading),Math.sin(heading),maxSpeed(b)*(.45+.3*b.ease),dt,BOT_TURN)}
+ const heading=Math.atan2(wy,wx);steerBot(b,Math.cos(heading),Math.sin(heading),maxSpeed(b)*.6,dt,BOT_TURN)}
 function updateBot(b,dt){const r=rad(b);
- b.vhd+=wrap(b.hd-b.vhd)*Math.min(1,VIS_TURN*dt); // rendered heading eases toward the movement heading
- if(b.boostHold>0)b.boostHold-=dt;if(b.boostCd>0)b.boostCd-=dt;b.senseT-=dt;
- if(b.senseT<=0){const sight=650+r*3,sightSq=sight*sight;b.sightSq=sightSq;const th=[],pr=[];
-  for(const o of cells){if(o===b||!o.alive)continue;const dx=o.x-b.x,dy=o.y-b.y;if(dx*dx+dy*dy>sightSq)continue;if(canEat(o,b))th.push(o);else if(canEat(b,o))pr.push(o)}
-  b.sThreats=th;b.sPreys=pr;b.senseT=.07+(1-b.skill)*.27+Math.random()*.07}
- const threats=b.sThreats.filter(o=>o.alive),preys=b.sPreys.filter(o=>o.alive);
+ const sight=650+r*3,sightSq=sight*sight,threats=[],preys=[];
+ for(const o of cells){if(o===b||!o.alive)continue;const dx=o.x-b.x,dy=o.y-b.y;if(dx*dx+dy*dy>sightSq)continue;if(canEat(o,b))threats.push(o);else if(canEat(b,o))preys.push(o)}
  const baseSpeed=maxSpeed(b),canSprint=sprintAllowed(b);
  let aggr=b.aggr;if(b.cd<=0)aggr*=1.1;
  const shielded=b.imm>0;b.boost=false;
- b.jit+=(Math.random()-.5)*(2.6*(1.05-b.skill))*dt;b.jit*=Math.exp(-2.4*dt);
- b.ease+=(Math.random()-.5)*1.3*dt;b.ease=Math.max(.4,Math.min(1,b.ease));
  let nearest=null,nearestGap=Infinity,worst=Infinity;const defenseReady=!shielded&&b.cd<=0,hyst=b.fl>0?1.3:1;
  for(const th of threats){if(!isRealThreat(th))continue;const gap=Math.hypot(th.x-b.x,th.y-b.y)-r-rad(th);
   const ratio=Math.max(.8,Math.min(1.6,maxSpeed(th)/Math.max(1,baseSpeed)));
@@ -1311,15 +1297,13 @@ function updateBot(b,dt){const r=rad(b);
   if(curValid&&(locked||bestV<curV*HUNT_SWITCH)){target=b.hunt;targetDist=curD}else{target=bestT;targetDist=bestD;if(target!==b.hunt)b.huntLock=HUNT_LOCK}
   b.hunt=target;
   if(target){const gap=Math.max(0,targetDist-r-rad(target)*EAT_OV),shieldedArr=target.imm>gap/Math.max(1,baseSpeed);
-   const wantBoost=canSprint&&!shieldedArr&&gap<260*aggr&&maxSpeed(target)>baseSpeed*.75;
-   if(wantBoost&&b.boostCd<=0&&Math.random()<b.boostiness){b.boostHold=rnd(.35,.95);b.boostCd=rnd(1,2.2)} // humans boost in bursts
-   b.boost=b.boostHold>0&&canSprint;
+   b.boost=canSprint&&!shieldedArr&&gap<260*aggr&&maxSpeed(target)>baseSpeed*.75;
    let speed=baseSpeed*(b.boost?SPR_MULT:1);const lead=Math.min(targetDist/Math.max(1,speed),1.2);
    const predX=clampW(target.x+target.vx*lead,r),predY=clampW(target.y+target.vy*lead,r),lungeAng=Math.atan2(predY-b.y,predX-b.x);
    tryBotOffensiveAbility(b,target,targetDist,aggr,lungeAng,!!nearest);
    speed=maxSpeed(b)*(b.boost?SPR_MULT:1);let dx=predX-b.x,dy=predY-b.y,d=Math.hypot(dx,dy);
    if(d<1){dx=Math.cos(lungeAng);dy=Math.sin(lungeAng);d=1}steerBot(b,dx/d,dy/d,speed,dt,CHASE_TURN);return}}
- b.hunt=null;b.huntLock=0;forageOrWander(b,b.sightSq,threats,dt)}
+ b.hunt=null;b.huntLock=0;forageOrWander(b,sightSq,threats,dt)}
 
 // ============================================================ simulation
 function overlap(a,b){let dx=b.x-a.x,dy=b.y-a.y;const ra=rad(a),rb=rad(b),md=ra+rb,dsq=dx*dx+dy*dy;if(dsq>=md*md)return;let d=Math.sqrt(dsq);if(d<.001){dx=1;dy=0;d=1}
