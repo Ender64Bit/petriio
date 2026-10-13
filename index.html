@@ -545,7 +545,7 @@ $('questBack').onclick=()=>setState('menu');
 const LAN_V=1,LAN_MAXG=3,LAN_SNAP_MS=100,LAN_IN_MS=50;
 let pendingLan=null; // {host,code} | {tryJoin:code} | {manHost} | {manJoin} — consumed by pick
 let net={mode:'off',link:null,isHost:false,pc:null,dc:null,conns:[],pending:null,peers:{},inputs:{},cellsById:{},snapQ:[],
- hostId:null,myId:null,lastSnap:0,lastIn:0,helloT:0,waitT:0,lastSnapMs:0,lastInputMs:0,ui:null,answerShown:false};
+ hostId:null,myId:null,lastSnap:0,lastIn:0,helloT:0,waitT:0,lastSnapMs:0,ui:null,answerShown:false};
 function syncName(){const v=sanitizeName($('name').value);if(v!==pname){pname=v;store.set('name',pname)}refreshStats();return pname}
 // --- signaling codec: {kind,sdp} object <-> single pasteable text blob ---
 // SDP is minified (TCP candidates dropped — UDP suffices on LAN) then deflated: a ~1KB
@@ -706,10 +706,16 @@ function routeHost(m,dc,slot){
 function clampCz(z){z=z||{};const ci=(v,n)=>Math.max(0,Math.min(n-1,v|0));
  return{eyes:ci(z.eyes,12),mouth:ci(z.mouth,9),gear:ci(z.gear,10),hat:ci(z.hat,16),pat:ci(z.pat,8),out:ci(z.out,8),acc:ci(z.acc,8),tone:ci(z.tone,9)}}
 function guestCount(){return Object.keys(net.peers).length}
+function hostDing(gid,victim){
+ const m={k:'ding',to:gid,name:victim};
+ if(net.link==='try'){if(net.tryActs)trySend(net.tryActs.ding,m);return}
+ for(const s of net.conns)if(s.alive&&s.guestId===gid){chanSend(s.dc,m);break}
+}
 function removeRemote(gid){
  delete net.peers[gid];delete net.inputs[gid];
  for(let i=cells.length-1;i>=0;i--){const c=cells[i];
   if(c.remote&&c.pid===gid){for(const p of pellets)if(p.by===c)p.by=null;cells.splice(i,1)}}
+ AudioSys.leave();
  renderSigList();
 }
 // ---- guest side ----
@@ -768,7 +774,7 @@ function routeGuest(m){
   if(net.mode!=='guest'&&net.mode!=='wait')return;
   net.lastSnapMs=performance.now();
   net.snapQ.push(m);if(net.snapQ.length>2)net.snapQ.shift();
- }else if(m.k==='bye'){if(net.mode==='guest')guestLost('Host left the room.')}
+ }else if(m.k==='ding'){if(m.to===net.myId){AudioSys.kill();feed.push({t:3.5,txt:'You ate '+String(m.name||'a rival')})}}else if(m.k==='bye'){if(net.mode==='guest')guestLost('Host left the room.')}
 }
 function openSigJoin(){net.ui='joinOffer';$('sigTitle').textContent='Join a room';
  sigStep('1 · Paste the HOST\u2019s offer code below, then CONNECT.');
@@ -777,7 +783,7 @@ function guestCleanup(){try{if(net.dc)net.dc.close()}catch(e){}try{if(net.pc)net
  net.dc=null;net.pc=null;net.snapQ=[];net.cellsById={}}
 function guestLost(msg){
  guestCleanup();const r=net.mode;net.mode='off';net.link=null;net.hostId=null;
- cells=[];pellets=[];player=null;
+ cells=[];pellets=[];player=null;AudioSys.leave();
  if(r==='guest'||state==='play'||state==='dead'){setState('lan');sigMsg(msg)}
 }
 function guestAskRespawn(){
@@ -797,14 +803,14 @@ function hostAddGuest(name,type,cz){
  c.imm=SPAWN_IMM;placeSafe(c);cells.push(c);
  net.peers[gid]={name:nm,type:ty};net.inputs[gid]={dx:0,dy:0,boost:false,ab:false,hd:0,t:0};
  feed.push({t:3.5,txt:nm+' joined ('+guestCount()+'/'+LAN_MAXG+' guests)'});
+ AudioSys.join();
  renderSigList();
  return gid;
 }
 function hostGuestInput(gid,d){
  const s=net.inputs[gid];if(!s)return;
  d=d||{};s.dx=+d.dx||0;s.dy=+d.dy||0;s.boost=!!d.boost;if(d.ab)s.ab=true;s.hd=+d.hd||0;
- s.t=performance.now();net.lastInputMs=performance.now();
- net.lastInputStr=(+s.dx.toFixed(2))+','+(+s.dy.toFixed(2))+(s.boost?'B':'');
+ s.t=performance.now();
 }
 function hostGuestRespawn(gid,type){
  for(const c of cells)if(c.remote&&c.pid===gid&&!c.alive){
@@ -814,13 +820,13 @@ function hostGuestRespawn(gid,type){
   c.imm=SPAWN_IMM;c.cd=c.od=c.slow=0;c.boost=false;placeSafe(c);break}
 }
 function guestWelcomeWorld(){
- cells=[];pellets=[];trails=0;fx=[];parts=[];feed=[];peak=0;kills=0;runCoins=0;runKillCoins=0;bankedRun=0;killer=null;net.cellsById={};net.snapErr=false;net.snapSkips=0;
+ cells=[];pellets=[];trails=0;fx=[];parts=[];feed=[];peak=0;kills=0;runCoins=0;runKillCoins=0;bankedRun=0;killer=null;net.cellsById={};
  player=mkCell(chosen,true);player.name=pname||'Player';player.look=toLook(cz);
  player.x=W/2;player.y=W/2;player.pid=net.myId;player.nid=net.myId;
  // NOT pushed into cells: the first snapshot delivers the authoritative cell and applySnap
  // re-points player at it. A same-nid placeholder in cells wins the nid match forever,
  // stranding the camera on a ghost while the real cell plays elsewhere.
- setState('play');feed.push({t:4,txt:'Joined the room'});
+ setState('play');feed.push({t:4,txt:'Joined the room'});AudioSys.join();
 }
 // transport-aware sends. Relay input/hello go to everyone (peers filter by nonce/gid);
 // the rooms are tiny (<=4 humans) so broadcast costs nothing and never depends on
@@ -839,7 +845,7 @@ async function tryLib(){if(tryMod)return tryMod;tryMod=await import('https://esm
 function genRoom(){const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<5;i++)s+=A[ri(A.length)];return s}
 function normRoom(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)}
 function trySend(act,data,opt){try{const r=act.send(data,opt||undefined);if(r&&r.catch)r.catch(()=>{})}catch(e){}}
-function tryFail(msg){try{if(net.room)net.room.leave()}catch(e){}
+function tryFail(msg){try{if(net.room)net.room.leave()}catch(e){}AudioSys.leave();
  net.room=null;net.tryActs=null;net.mode='off';net.link=null;net.hostTryPid=null;net.tryIds=null;net.tryIdsR=null;net.myNonce=null;
  pendingLan=null;setState('lan');lanMsg(msg)}
 async function tryHostGame(type,code){
@@ -877,8 +883,8 @@ function sendTryHello(){
 }
 function wireTry(room,isHost){
  const hello=room.makeAction('hello'),welcome=room.makeAction('welcome'),denied=room.makeAction('denied'),
-  input=room.makeAction('input'),snap=room.makeAction('snap'),respawn=room.makeAction('respawn');
- net.tryActs={hello,welcome,denied,input,snap,respawn};
+  input=room.makeAction('input'),snap=room.makeAction('snap'),respawn=room.makeAction('respawn'),ding=room.makeAction('ding');
+ net.tryActs={hello,welcome,denied,input,snap,respawn,ding};
  room.onPeerJoin=pid=>{};
  // NOTE: deliberately no peer-id mapping here — guest expiry is handled by the
  // input/ping sweeper below, host-leave by the guest's snapshot stall check.
@@ -921,6 +927,7 @@ function wireTry(room,isHost){
    net.lastSnapMs=performance.now();
    net.snapQ.push(d);if(net.snapQ.length>2)net.snapQ.shift();
   };
+  ding.onMessage=(d)=>{d=d||{};if(d.to===net.myId){AudioSys.kill();feed.push({t:3.5,txt:'You ate '+String(d.name||'a rival')})}};
  }
 }
 // ---- shared sim glue (host steers guests, both sides snapshot) ----
@@ -990,7 +997,6 @@ function sweepLanGuests(){
 function broadcastSnap(){
  const now=performance.now();if(now-net.lastSnap<LAN_SNAP_MS)return;net.lastSnap=now;
  if(guestCount()===0)return;
- net.lastBcastMs=now; // proves the loop is alive (shown in host HUD)
  hostBcastSnap(buildSnap());
 }
 function hostRespawnSelf(){
@@ -998,7 +1004,7 @@ function hostRespawnSelf(){
  const r=R0;player.area=Math.PI*r*r;player.alive=true;
  player.x=W/2;player.y=W/2;player.vx=player.vy=player.kx=player.ky=0;
  player.imm=shieldT();player.cd=player.od=player.slow=0;player.boost=false;
- peak=0;setState('play');
+ peak=0;AudioSys.power();setState('play');
 }
 function applySnap(s){
  if(!s||!Array.isArray(s.c))return;
@@ -1018,8 +1024,8 @@ function applySnap(s){
    c.imm=a[7];c.hd=a[8];c.boost=a[9]===1;c.od=a[10];c.slow=a[11];c.cd=a[12];c.name=String(a[13]||'');
    c.look={eyes:a[14]|0,mouth:a[15]|0,gear:a[16]|0,hat:a[17]|0,pat:a[18]|0,out:a[19]||null,acc:a[20]||'#fff',tone:+a[21]||0};
    c.pid=nid;c.player=(nid===net.myId);
-  }catch(_){net.snapSkips=(net.snapSkips||0)+1}
-  }
+   }catch(_){}
+   }
  for(let i=cells.length-1;i>=0;i--){const c=cells[i];
   if(c.nid&&!seen.has(c.nid)){delete map[c.nid];cells.splice(i,1)}}
  pellets.length=0;trails=0;
@@ -1031,7 +1037,7 @@ function applySnap(s){
  }
  let me=null;for(const c of cells)if(c.nid===net.myId){me=c;break}
  if(me){player=me;peak=Math.max(peak,score(player.area))}
- }catch(e){if(!net.snapErr){net.snapErr=true;feed.push({t:5,txt:'snapshot error — tell the host to re-make the room'})}}
+ }catch(e){}
 }
 function guestPlay(dt){
  const now=performance.now();
@@ -1042,9 +1048,8 @@ function guestPlay(dt){
  if(now-net.lastIn>=LAN_IN_MS){net.lastIn=now;
   const[dx,dy,m]=inputDir();let ax=dx,ay=dy,am=m;
   if(am>1){ax/=am;ay/=am;am=1}
-  let fire=false;if(abReq){abReq=false;fire=true}
+  let fire=false;if(abReq){abReq=false;fire=true;AudioSys.power()}
   const ang=am>=.08?Math.atan2(ay,ax):(player?player.hd:0);
-  net.lastOut=(+ax.toFixed(2))+','+(+ay.toFixed(2))+(boostH?'B':'');
   guestSend({k:'input',from:net.myId,dx:+ax.toFixed(3),dy:+ay.toFixed(3),boost:boostH,ab:fire,hd:+ang.toFixed(2)});
   if(now-(net.pingT||0)>5000){net.pingT=now;guestSend({k:'ping',from:net.myId})}
   // Stall watch: snapshots stopping for 12s means the host is gone (works on both
@@ -1062,7 +1067,8 @@ function guestPlay(dt){
 function dieLan(){
  AudioSys.death();
  $('dTitle').textContent='Eaten! Ask the host to keep playing';
- $('dInfo').textContent=`Size ${peak} · tap PLAY AGAIN to respawn`;
+ $('dInfo').textContent=`Size ${peak} · tap RESPAWN to come back`;
+ $('again').textContent='RESPAWN';
  deadAt=performance.now();setState('dead');
 }
  function waitTick(){
@@ -1340,7 +1346,7 @@ function update(dt){
   let e,v;if(canEat(a,b)){e=a;v=b}else if(canEat(b,a)){e=b;v=a}else{overlap(a,b);continue}
   const reach=rad(e)+rad(v)*EAT_OV;
    if((e.x-v.x)**2+(e.y-v.y)**2<reach*reach){e.area+=Math.min(v.area*ABSORB,e.area*1.5)*(e.player?gainM():1);v.alive=false;
-    if(v.player)killer=e;else if(e.player){burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});const before=level().l;const killXp=XP_KILL_BASE+Math.floor(v.area/XP_KILL_AREA_DIV);xp+=killXp;addTypeXp(e.t,killXp);if(level().l>before)levelUpUntil=performance.now()+2200;runKillCoins+=COIN_PER_KILL+Math.floor(score(v.area)/COIN_KILL_DIV);addQuestProgress('KILLS',1,v.t);AudioSys.kill()}}}
+    if(v.player)killer=e;else if(e.player){burst(v.x,v.y,T[v.t].c,20);pop(v.x,v.y,'+'+Math.max(1,Math.floor(v.area*ABSORB/100)));feed.push({t:3.5,txt:'You ate '+v.name});const before=level().l;const killXp=XP_KILL_BASE+Math.floor(v.area/XP_KILL_AREA_DIV);xp+=killXp;addTypeXp(e.t,killXp);if(level().l>before)levelUpUntil=performance.now()+2200;runKillCoins+=COIN_PER_KILL+Math.floor(score(v.area)/COIN_KILL_DIV);addQuestProgress('KILLS',1,v.t);AudioSys.kill()}else if(e.remote){hostDing(e.pid,v.name)}}}
   for(const c of cells)if(!c.alive){if(c.player){if(state!=='dead')die()}else if(c.remote){}else{const r=R0+Math.random()*30;c.t=ri(5);c.area=Math.PI*r*r;c.alive=true;c.name=uniqueBotName();c.look=uniqueBotLook();c.imm=SPAWN_IMM;c.hunt=null;c.tgt=null;c.od=c.slow=0;c.odM=1.45;c.cd=0;c.boost=false;c.fl=0;c.huntLock=0;c.lock=0;c.bump=0;c.aiSeed=ri(1000000);botTraits(c);placeSafe(c)}}
   if(net.mode==='host'){broadcastSnap();sweepLanGuests()}
   peak=Math.max(peak,score(player.area));runCoins=Math.floor(peak/COIN_SCORE_PER)+runKillCoins;
@@ -1350,6 +1356,7 @@ function update(dt){
  for(const f of fx)f.t+=dt;fx=fx.filter(f=>f.t<.28);
  lbT-=dt;if(lbT<=0){lbT=.4;const alive=cells.filter(c=>c.alive).sort((a,b)=>b.area-a.area);lb=alive.slice(0,5);lbRank=alive.indexOf(player)+1}}
 function die(){bank();store.set('xp',xp);AudioSys.death();
+ $('again').textContent='PLAY AGAIN';
  $('dTitle').textContent=killer?`Eaten by ${killer.name} (${T[killer.t].n})`:'You died';
  $('dInfo').textContent=`Size ${peak} · +${runCoins} Biocoins · Best ${best}`+((net.link==='try'&&net.mode==='host'&&net.code)?` · ROOM ${net.code}`:'');deadAt=performance.now();setState('dead');bankedRun=0}
 
@@ -1513,7 +1520,7 @@ function hud(){
  if(touchUI&&VH>VW){g.textAlign='center';g.fillStyle='#fff';g.font='700 15px system-ui';g.fillText('Rotate your phone to landscape for a better view',VW/2,VH-130)}
  g.textAlign='left';g.fillStyle='#fff';g.font='700 22px system-ui';g.fillText(`Size ${score(player.area)}`,16,32);
  g.font='16px system-ui';g.fillStyle=BIO;g.fillText(`⬤ ${coins+runCoins-bankedRun} Biocoins`,16,56);
- const lv=level();g.fillStyle='#cfe';g.fillText(`${T[player.t].n}  ·  Lv ${lv.l}  ${lv.into}/${lv.need} XP  ·  ${mTag(mLevel(player.t))}${net.link==='try'&&net.mode==='host'&&net.code?`  ·  ROOM ${net.code} ${1+guestCount()}/4 out${net.lastBcastMs?((performance.now()-net.lastBcastMs)/1000).toFixed(1)+'s':'—'} in${net.lastInputMs?((performance.now()-net.lastInputMs)/1000).toFixed(1)+'s':'—'} v${net.lastInputStr||'—'}`:net.mode==='host'?`  ·  HOST ${1+guestCount()}/4 out${net.lastBcastMs?((performance.now()-net.lastBcastMs)/1000).toFixed(1)+'s':'—'} in${net.lastInputMs?((performance.now()-net.lastInputMs)/1000).toFixed(1)+'s':'—'} v${net.lastInputStr||'—'}`:net.mode==='guest'?`  ·  GUEST-${net.link==='try'?'try':'man'} snap${net.lastSnapMs?((performance.now()-net.lastSnapMs)/1000).toFixed(1)+'s':'—'} q${net.snapQ.length} ${net.link==='try'?'relay':(net.dc?net.dc.readyState:'no-dc')}${net.snapSkips?' skip'+net.snapSkips:''} o${net.lastOut||'—'} ${(player&&net.cellsById[player.nid]===player)?'me':'GHOST'}`:''}`,16,78);
+ const lv=level();g.fillStyle='#cfe';g.fillText(`${T[player.t].n}  ·  Lv ${lv.l}  ${lv.into}/${lv.need} XP  ·  ${mTag(mLevel(player.t))}${net.mode==='host'?(net.link==='try'&&net.code?`  ·  ROOM ${net.code}`:`  ·  HOST ${1+guestCount()}/4`):net.mode==='guest'?'  ·  GUEST':''}`,16,78);
  if(player.imm>0){const maxSh=shieldT(),frac=clamp01(player.imm/Math.max(.01,maxSh));g.fillStyle='rgba(255,255,255,.35)';g.fillRect(16,88,160,6);g.fillStyle='#5ae6ff';g.fillRect(16,88,160*frac,6)}
  if(performance.now()<levelUpUntil){const k=1-clamp01((levelUpUntil-performance.now())/2200);g.globalAlpha=Math.min(1,k*4);g.textAlign='center';g.fillStyle='#ffd75a';g.font='700 34px system-ui';g.fillText(`LEVEL UP!  Lv ${lv.l}`,VW/2,VH*.14);g.globalAlpha=1}
  if(performance.now()<masteryToastUntil&&masteryToastTxt){const k=1-clamp01((masteryToastUntil-performance.now())/2600);g.globalAlpha=Math.min(1,k*4);g.textAlign='center';g.fillStyle='#96e6ff';g.font='700 22px system-ui';g.fillText(masteryToastTxt,VW/2,VH*.14+36);g.globalAlpha=1}
@@ -1550,7 +1557,9 @@ const AudioSys=(()=>{let ctx=null,enabled=store.get('snd',true),musicTimer=null,
   power(){note(520,.18,'sine',.09,1.9)},
   eat(){note(rnd(500,640),.07,'triangle',.06,1.2)},
   kill(){note(170,.22,'sawtooth',.11,.5)},
-  death(){note(140,.6,'sawtooth',.13,.35)} };
+  death(){note(140,.6,'sawtooth',.13,.35)},
+  join(){note(520,.12,'sine',.08,1.3);setTimeout(()=>note(660,.14,'sine',.08,1.2),90)},
+  leave(){note(440,.16,'sine',.08,.7)} };
 })();
 
 // ============================================================ main loop
